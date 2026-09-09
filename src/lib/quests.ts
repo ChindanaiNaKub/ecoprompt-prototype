@@ -3,6 +3,7 @@ export type QuestId =
   | 'prompt-trim'
   | 'batch-once'
   | 'compare-models'
+  | 'context-clear'
 
 export interface Quest {
   id: QuestId
@@ -20,9 +21,9 @@ export interface Badge {
 }
 
 export interface LeaderboardEntry {
-  name: string
-  carbonSavedG: number
-  rightSized: number
+  display_name: string
+  total_completed_quests: number
+  max_streak: number
   isYou?: boolean
 }
 
@@ -71,6 +72,14 @@ export function initialGamification(): GamificationState {
         progress: 0,
         skill: 'Building intuition for quality vs. cost',
       },
+      {
+        id: 'context-clear',
+        title: 'Context Management',
+        description: 'Clear irrelevant conversation history before a new query',
+        target: 1,
+        progress: 0,
+        skill: 'Understanding context length vs. compute cost',
+      }
     ],
     badges: [],
     rightSizeStreak: 0,
@@ -84,7 +93,9 @@ export function initialGamification(): GamificationState {
 function bumpQuest(state: GamificationState, id: QuestId, by = 1) {
   const q = state.quests.find((x) => x.id === id)
   if (!q || q.progress >= q.target) return
+  
   q.progress = Math.min(q.target, q.progress + by)
+  
   if (q.progress >= q.target) {
     const badgeName =
       id === 'right-size-streak'
@@ -93,7 +104,10 @@ function bumpQuest(state: GamificationState, id: QuestId, by = 1) {
           ? 'Lean Prompter'
           : id === 'batch-once'
             ? 'Batcher'
-            : 'Comparer'
+            : id === 'compare-models'
+              ? 'Comparer'
+              : 'Context Master'
+              
     if (!state.badges.some((b) => b.name === badgeName)) {
       state.badges.push({
         id: `${id}-${Date.now()}`,
@@ -119,6 +133,7 @@ export function onRequestComplete(
     carbonSavedG: number
     tokensSaved: number
     looksBatched: boolean
+    contextCleared: boolean
   },
 ): GamificationState {
   const next = structuredClone(state)
@@ -147,16 +162,9 @@ export function onRequestComplete(
     bumpQuest(next, 'batch-once')
   }
 
-  return next
-}
+  if (opts.contextCleared) {
+    bumpQuest(next, 'context-clear')
+  }
 
-export function demoLeaderboard(you: GamificationState): LeaderboardEntry[] {
-  const peers: LeaderboardEntry[] = [
-    { name: 'Mali S.', carbonSavedG: 12.4, rightSized: 18 },
-    { name: 'Kenji T.', carbonSavedG: 9.1, rightSized: 14 },
-    { name: 'You', carbonSavedG: you.totalCarbonSavedG, rightSized: you.switchesAccepted, isYou: true },
-    { name: 'Aom P.', carbonSavedG: 6.8, rightSized: 11 },
-    { name: 'Napat R.', carbonSavedG: 4.2, rightSized: 7 },
-  ]
-  return peers.sort((a, b) => b.carbonSavedG - a.carbonSavedG)
+  return next
 }
