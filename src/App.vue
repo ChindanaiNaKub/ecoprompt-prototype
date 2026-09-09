@@ -158,7 +158,7 @@ function useSample(kind: 'simple' | 'complex') {
   <div class="app">
     <div class="proto">
       <span class="proto-mark">PROTOTYPE</span>
-      <span>Ethics 953420 · Group 13 · estimates only · no live API</span>
+      <span>Ethics 953420 · Group 13 · modelled ranges, not measured emissions</span>
     </div>
 
     <header class="masthead">
@@ -166,23 +166,23 @@ function useSample(kind: 'simple' | 'complex') {
         <p class="kicker">Carbon-aware prompting</p>
         <h1>EcoPrompt</h1>
         <p class="lede">
-          Write a prompt. Pick a model. See the carbon cost before you send — and switch if the
-          model is oversized.
+          Write a prompt. Pick a model. See a transparent impact scenario before you send — and
+          choose the model that fits the task.
         </p>
       </div>
 
-      <aside class="gauge" aria-live="polite" aria-label="Live carbon estimate">
+      <aside class="gauge" aria-live="polite" aria-label="Modelled carbon estimate">
         <div class="gauge-top">
-          <span>Live carbon</span>
+          <span>Modelled carbon</span>
           <span class="mono gauge-chip" :data-state="liveEstimate.mismatch ? 'hot' : 'ok'">
             {{ liveEstimate.mismatch ? liveEstimate.direction : 'matched' }}
           </span>
         </div>
-        <p class="gauge-value mono">{{ formatCarbon(liveEstimate.currentEstimate.carbonG) }}</p>
+        <p class="gauge-value mono">{{ formatCarbon(liveEstimate.currentEstimate.carbonRange.centralG) }}</p>
         <p class="gauge-meta mono">
           Predicted {{ formatTokens(liveEstimate.currentEstimate.totalTokens) }} tokens
           <br />
-          Modelled range {{ formatCarbonRange(liveEstimate.currentEstimate.carbonRange) }}
+          Low–high scenario {{ formatCarbonRange(liveEstimate.currentEstimate.carbonRange) }}
         </p>
         <div class="gauge-track" role="presentation">
           <span class="gauge-fill" :style="{ width: meterPct + '%' }" />
@@ -190,6 +190,14 @@ function useSample(kind: 'simple' | 'complex') {
         <p class="gauge-formula">
           Sensitivity model · methodology {{ liveEstimate.currentEstimate.methodologyVersion }}
         </p>
+        <details class="methodology">
+          <summary>How to read this</summary>
+          <p>
+            Tokens are predicted before sending. Carbon is a low–high operational scenario, not a
+            measurement of the provider’s emissions.
+            <a href="https://github.com/ChindanaiNaKub/ecoprompt-prototype/blob/main/docs/METHODOLOGY.md" target="_blank" rel="noreferrer">Method and sources</a>
+          </p>
+        </details>
       </aside>
     </header>
 
@@ -273,7 +281,7 @@ function useSample(kind: 'simple' | 'complex') {
           </div>
           <p v-else class="empty">No stamps yet.</p>
           <p v-if="game.totalCarbonSavedG > 0" class="saved mono">
-            Saved ≈ {{ formatCarbon(game.totalCarbonSavedG) }} ·
+            Modelled avoided (central scenario) ≈ {{ formatCarbon(game.totalCarbonSavedG) }} ·
             {{ formatTokens(game.totalTokensSaved) }} tok
           </p>
         </section>
@@ -328,20 +336,20 @@ function useSample(kind: 'simple' | 'complex') {
           <div class="compare-col">
             <p class="compare-label">Current</p>
             <p class="compare-name">{{ lastRec.current.name }}</p>
-            <p class="compare-num mono">{{ formatCarbon(lastRec.currentEstimate.carbonG) }}</p>
+            <p class="compare-num mono">{{ formatCarbon(lastRec.currentEstimate.carbonRange.centralG) }}</p>
             <p class="mono faint">
-              {{ formatTokens(lastRec.currentEstimate.totalTokens) }} tok
+              {{ formatCarbonRange(lastRec.currentEstimate.carbonRange) }} · predicted {{ formatTokens(lastRec.currentEstimate.totalTokens) }} tok
             </p>
           </div>
           <div class="compare-col suggest">
             <p class="compare-label">Suggested</p>
             <p class="compare-name">{{ lastRec.suggested.name }}</p>
-            <p class="compare-num mono">{{ formatCarbon(lastRec.suggestedEstimate.carbonG) }}</p>
+            <p class="compare-num mono">{{ formatCarbon(lastRec.suggestedEstimate.carbonRange.centralG) }}</p>
             <p class="mono faint">
-              {{ formatTokens(lastRec.suggestedEstimate.totalTokens) }} tok
+              {{ formatCarbonRange(lastRec.suggestedEstimate.carbonRange) }} · predicted {{ formatTokens(lastRec.suggestedEstimate.totalTokens) }} tok
             </p>
             <p v-if="lastRec.direction === 'downsize'" class="delta">
-              ≈ −{{ savingsPct }}% carbon
+              ≈ −{{ savingsPct }}% central-scenario impact
             </p>
             <p v-else class="delta hot">Weak model + retries can cost more</p>
           </div>
