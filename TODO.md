@@ -6,6 +6,14 @@
 
 Create one GitHub issue per checkbox below. The person named first is the owner; the named support person reviews, pairs, or unblocks that issue. Run `bun run build` before asking for review.
 
+## Completed shared foundation — do not duplicate
+
+- [x] Groq three-tier catalog; transparent low/central/high modelled carbon range; provider-token vs modelled-carbon wording.
+- [x] Supabase migrations for private request events, daily limits, methodology range fields, and consented study sessions.
+- [x] Groq Edge Function contract, magic-link client wiring, live-response UI, methodology note, in-app pre/post study UI, GitHub Pages public-variable injection, and `bun test` coverage.
+
+These commits are in `main`, but **none of the external services have been verified or deployed by Codex**. Owners below must deploy and test them with the team accounts before marking their issue complete.
+
 ## What “complete” means on 14 September
 
 - A signed-in user sends a real prompt to Groq, sees a pre-send modeled range and post-response provider-reported token usage, and can keep or switch models.
@@ -25,16 +33,16 @@ Create one GitHub issue per checkbox below. The person named first is the owner;
   - Done when: no secret appears in the repository/browser, and a test user receives a magic link.
 
 - [ ] **Deploy schema and Groq Edge Function; prove one real request** — owner: Titipon; support: Kirana; due **10 Sep**
-  - Deploy `supabase/migrations/202609090001_ecoprompt.sql` and `execute-prompt`.
+  - Deploy both migrations (`202609090001` and `202609090002`) and `execute-prompt`; do not rewrite the shared backend contract.
   - Verify JWT validation, Groq response/usage parsing, 20 normal + 3 dual daily limits, 429 message, RLS isolation, and metadata-only writes.
   - Done when: a curl/browser test creates a private request event with real provider token counts.
 
 ### 2. Chindanai + Kirana — Build the live user journey in parallel
 
-- [ ] **Core dashboard: sign-in, estimate, override, switch/keep, and live response** — owner: Chindanai; support: Kirana; due **11 Sep**
-  - Connect `src/lib/supabase.ts` and `src/lib/live.ts` to the existing dashboard.
-  - Add magic-link sign-in/sign-out, configured/demo state, complexity override, prompt-storage consent, loading state, and useful provider/quota errors.
-  - Show actual input/output tokens and post-response carbon after a live send; preserve local demo fallback only when no public Supabase configuration exists.
+- [ ] **Finish and verify the core dashboard** — owner: Chindanai; support: Kirana; due **11 Sep**
+  - The shared branch already connects magic-link sign-in, configured/demo state, loading/error state, live response, provider-reported tokens, and modelled range.
+  - Add the remaining complexity override and per-request prompt-storage consent, then test against the deployed function.
+  - Preserve local demo fallback only when no public Supabase configuration exists; never label a modelled range as actual carbon.
   - Depends on: Task 1 infrastructure; backend contract from Task 2.
 
 - [ ] **Private history and public leaderboard screens** — owner: Kirana; support: Chindanai; due **12 Sep**
@@ -58,7 +66,7 @@ Create one GitHub issue per checkbox below. The person named first is the owner;
 ### 4. Atiwit — unblock methodology and make the release defensible
 
 - [ ] **Publish methodology values and in-app transparency copy** — owner: Atiwit; support: Kirana; due **10 Sep**
-  - Triangulate at least two sources, then supply a versioned low/central/high coefficient table for the three selected Groq models, Thailand grid factor, formula, uncertainty statement, and citation links.
+  - The shared branch already has `docs/METHODOLOGY.md` and provisional sensitivity ranges. Triangulate at least two sources, then replace/approve those values with a versioned low/central/high coefficient table for the three selected Groq models, Thailand grid factor, formula, uncertainty statement, and citation links.
   - Supply short UI copy for “estimate,” provider processing, prompt-storage consent, dual-run extra impact, and quota limits.
   - Done when: Titipon has final constants/version and Chindanai can display the approved language.
 
@@ -70,7 +78,7 @@ Create one GitHub issue per checkbox below. The person named first is the owner;
 ## Final integration and release
 
 - [ ] **Full-team release rehearsal** — owner: Kirana; support: everyone; due **13 Sep**
-  - Test the exact demo: sign in → simple prompt/large model → switch → real response/actual estimate → quest/badge → history → opt-in dual comparison → leaderboard.
+  - Test the exact demo: sign in → simple prompt/large model → switch → real response/provider tokens + modelled range → quest/badge → history → opt-in dual comparison → leaderboard.
   - Fix only release-blocking failures: secrets, login, request execution, persistence, mobile/keyboard blockers, misleading estimate labels, or claims of measured emissions.
 
 - [ ] **Deploy and submit working app** — owner: Kirana; support: everyone; due **14 Sep**
