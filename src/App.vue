@@ -4,9 +4,9 @@ import { MODELS, type ModelId } from './lib/models'
 import { recommend, type Recommendation } from './lib/recommend'
 import {
   formatCarbon,
+  formatCarbonRange,
   formatTokens,
   percentSaved,
-  GRID_INTENSITY_G_PER_WH,
 } from './lib/estimate'
 import {
   demoLeaderboard,
@@ -180,14 +180,15 @@ function useSample(kind: 'simple' | 'complex') {
         </div>
         <p class="gauge-value mono">{{ formatCarbon(liveEstimate.currentEstimate.carbonG) }}</p>
         <p class="gauge-meta mono">
-          {{ formatTokens(liveEstimate.currentEstimate.totalTokens) }} tok ·
-          {{ liveEstimate.currentEstimate.equivalence }}
+          Predicted {{ formatTokens(liveEstimate.currentEstimate.totalTokens) }} tokens
+          <br />
+          Modelled range {{ formatCarbonRange(liveEstimate.currentEstimate.carbonRange) }}
         </p>
         <div class="gauge-track" role="presentation">
           <span class="gauge-fill" :style="{ width: meterPct + '%' }" />
         </div>
         <p class="gauge-formula">
-          Wh × {{ GRID_INTENSITY_G_PER_WH }} gCO₂e/Wh · approximation
+          Sensitivity model · methodology {{ liveEstimate.currentEstimate.methodologyVersion }}
         </p>
       </aside>
     </header>

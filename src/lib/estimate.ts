@@ -3,8 +3,13 @@ import { getModel, type ModelId } from './models'
 /** Thailand / SE Asia grid intensity estimate (gCO₂e / Wh) — labeled as approximation */
 export const GRID_INTENSITY_G_PER_WH = 0.48
 
-/** Rough phone-charge equivalence: ~12 Wh per full charge */
-export const PHONE_CHARGE_WH = 12
+export const METHODOLOGY_VERSION = '2026-09-sensitivity-v1'
+
+export interface CarbonRange {
+  lowG: number
+  centralG: number
+  highG: number
+}
 
 export interface Estimate {
   inputTokens: number
@@ -12,9 +17,8 @@ export interface Estimate {
   totalTokens: number
   energyWh: number
   carbonG: number
-  phoneCharges: number
-  /** Human-readable equivalence */
-  equivalence: string
+  carbonRange: CarbonRange
+  methodologyVersion: string
 }
 
 /** Naive tokenizer: ~4 chars per token for English/code mix */
@@ -38,9 +42,15 @@ export function estimateRequest(
   const inputTokens = estimateTokensFromText(prompt)
   const outputTokens = Math.max(1, Math.round(expectedOutputTokens))
   const totalTokens = inputTokens + outputTokens
-  const energyWh = (totalTokens / 1000) * model.energyWhPer1kTokens
+  const [lowWhPer1kTokens, centralWhPer1kTokens, highWhPer1kTokens] =
+    model.energyWhRangePer1kTokens
+  const energyWh = (totalTokens / 1000) * centralWhPer1kTokens
   const carbonG = energyWh * GRID_INTENSITY_G_PER_WH
-  const phoneCharges = energyWh / PHONE_CHARGE_WH
+  const carbonRange = {
+    lowG: (totalTokens / 1000) * lowWhPer1kTokens * GRID_INTENSITY_G_PER_WH,
+    centralG: carbonG,
+    highG: (totalTokens / 1000) * highWhPer1kTokens * GRID_INTENSITY_G_PER_WH,
+  }
 
   return {
     inputTokens,
@@ -48,26 +58,19 @@ export function estimateRequest(
     totalTokens,
     energyWh,
     carbonG,
-    phoneCharges,
-    equivalence: formatEquivalence(carbonG, phoneCharges),
+    carbonRange,
+    methodologyVersion: METHODOLOGY_VERSION,
   }
-}
-
-function formatEquivalence(carbonG: number, phoneCharges: number): string {
-  if (phoneCharges >= 0.05) {
-    const n = phoneCharges < 1 ? phoneCharges.toFixed(2) : phoneCharges.toFixed(1)
-    return `≈ charging a phone ${n}×`
-  }
-  if (carbonG >= 0.01) {
-    return `≈ ${carbonG.toFixed(3)} gCO₂e (estimate)`
-  }
-  return `≈ ${carbonG.toFixed(4)} gCO₂e (estimate)`
 }
 
 export function formatCarbon(g: number): string {
   if (g >= 1) return `${g.toFixed(2)} gCO₂e`
   if (g >= 0.01) return `${g.toFixed(3)} gCO₂e`
   return `${g.toFixed(4)} gCO₂e`
+}
+
+export function formatCarbonRange(range: CarbonRange): string {
+  return `${formatCarbon(range.lowG)} – ${formatCarbon(range.highG)}`
 }
 
 export function formatTokens(n: number): string {

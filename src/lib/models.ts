@@ -9,8 +9,10 @@ export interface ModelInfo {
   name: string
   provider: 'Groq'
   tier: ModelTier
-  /** Central estimate; the methodology is deliberately shown as an approximation. */
+  /** Central scenario in the versioned methodology. It is not a measured provider value. */
   energyWhPer1kTokens: number
+  /** Sensitivity scenarios around the central assumption, in Wh per 1k tokens. */
+  energyWhRangePer1kTokens: readonly [low: number, central: number, high: number]
   capability: number
 }
 
@@ -26,6 +28,7 @@ export const MODELS: ModelInfo[] = [
     provider: 'Groq',
     tier: 'small',
     energyWhPer1kTokens: 0.08,
+    energyWhRangePer1kTokens: [0.04, 0.08, 0.12],
     capability: 2,
   },
   {
@@ -35,6 +38,7 @@ export const MODELS: ModelInfo[] = [
     provider: 'Groq',
     tier: 'medium',
     energyWhPer1kTokens: 0.14,
+    energyWhRangePer1kTokens: [0.07, 0.14, 0.21],
     capability: 3,
   },
   {
@@ -44,6 +48,7 @@ export const MODELS: ModelInfo[] = [
     provider: 'Groq',
     tier: 'large',
     energyWhPer1kTokens: 0.42,
+    energyWhRangePer1kTokens: [0.21, 0.42, 0.63],
     capability: 5,
   },
 ]
