@@ -20,6 +20,7 @@ const COMPLEX_HINTS = [
   /write (a |an )?(full |complete )?(app|system|module|class)/i,
   /compare.*(and|vs).*explain/i,
   /step[- ]by[- ]step/i,
+  /วิเคราะห์|วางแผน|code|script|develop/i,
 ]
 
 const SIMPLE_HINTS = [
@@ -62,7 +63,7 @@ export function classifyComplexity(prompt: string): {
     reasons.push('Multiple lines / structured instructions')
   }
 
-  const codeLike = /```|function |const |import |class /.test(text)
+  const codeLike = /```|function |const |import |class |def /.test(text)
   if (codeLike && len > 120) {
     score += 2
     reasons.push('Looks like coding / technical work')
@@ -84,7 +85,7 @@ export function classifyComplexity(prompt: string): {
   }
 
   const expectedOutputTokens =
-    complexity === 'simple' ? 80 : complexity === 'moderate' ? 350 : 900
+    complexity === 'simple' ? 80 : complexity === 'moderate' ? 256 : 512
 
   return { complexity, reasons, expectedOutputTokens }
 }
@@ -99,7 +100,6 @@ function pickSuggested(complexity: Complexity, currentId: ModelId): ModelInfo {
   const tier = preferredTier(complexity)
   const preferred = MODELS.filter((m) => m.tier === tier)
   const current = getModel(currentId)
-  // Prefer same provider when possible for a fairer comparison
   const sameProvider = preferred.find((m) => m.provider === current.provider)
   return sameProvider ?? preferred[0]
 }
