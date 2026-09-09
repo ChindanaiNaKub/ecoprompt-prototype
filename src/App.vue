@@ -15,6 +15,7 @@ import {
   onRequestComplete,
   type GamificationState,
 } from './lib/quests'
+import { beginStudy, finishStudy, scoreStudy, type StudyAnswers } from './lib/study'
 
 const prompt = ref(
   'Translate this sentence to Thai: Software engineers should consider environmental impact.',
@@ -25,6 +26,11 @@ const showCompare = ref(false)
 const lastRec = ref<Recommendation | null>(null)
 const reply = ref<string | null>(null)
 const toast = ref<string | null>(null)
+const studySessionId = ref<string | null>(null)
+const studyConsent = ref(false)
+const preAnswers = ref<Partial<StudyAnswers>>({})
+const postAnswers = ref<Partial<StudyAnswers>>({})
+const studyBusy = ref(false)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
 const liveEstimate = computed(() => recommend(prompt.value, modelId.value))
@@ -151,6 +157,40 @@ function useSample(kind: 'simple' | 'complex') {
   }
   reply.value = null
   showCompare.value = false
+}
+
+async function startStudy() {
+  if (!studyConsent.value || Object.keys(preAnswers.value).length !== 3) {
+    showToast('Confirm consent and answer all three questions first.')
+    return
+  }
+  studyBusy.value = true
+  try {
+    studySessionId.value = await beginStudy(scoreStudy(preAnswers.value))
+    showToast('Study started. Complete one model-selection task, then answer the follow-up questions.')
+  } catch (cause) {
+    showToast(cause instanceof Error ? cause.message : 'Could not start the study.')
+  } finally {
+    studyBusy.value = false
+  }
+}
+
+async function completeStudy() {
+  if (!studySessionId.value || Object.keys(postAnswers.value).length !== 3) {
+    showToast('Answer all three follow-up questions first.')
+    return
+  }
+  studyBusy.value = true
+  try {
+    await finishStudy(studySessionId.value, scoreStudy(postAnswers.value))
+    showToast('Thank you. Your pseudonymous study response is complete.')
+    studySessionId.value = null
+    postAnswers.value = {}
+  } catch (cause) {
+    showToast(cause instanceof Error ? cause.message : 'Could not save the follow-up study.')
+  } finally {
+    studyBusy.value = false
+  }
 }
 </script>
 
@@ -304,6 +344,53 @@ function useSample(kind: 'simple' | 'complex') {
               </tr>
             </tbody>
           </table>
+        </section>
+
+        <section class="rail-block study">
+          <h2>Optional study</h2>
+          <p class="rail-note">
+            This anonymous-style course study records two quiz scores and your model decision. It
+            never exports your email or prompt text.
+          </p>
+          <template v-if="!studySessionId">
+            <label class="consent">
+              <input v-model="studyConsent" type="checkbox" />
+              I consent to this course study.
+            </label>
+            <fieldset>
+              <legend>Before using EcoPrompt</legend>
+              <label><input v-model="preAnswers.emissions" type="radio" value="a" /> It measures Groq’s exact emissions.</label>
+              <label><input v-model="preAnswers.emissions" type="radio" value="b" /> It shows a modelled carbon range.</label>
+              <label><input v-model="preAnswers.emissions" type="radio" value="c" /> It has no environmental information.</label>
+              <label><input v-model="preAnswers.usage" type="radio" value="a" /> Tokens after a response are provider-reported usage.</label>
+              <label><input v-model="preAnswers.usage" type="radio" value="b" /> Tokens are exact electricity measurements.</label>
+              <label><input v-model="preAnswers.usage" type="radio" value="c" /> Tokens reveal carbon intensity.</label>
+              <label><input v-model="preAnswers.rightSizing" type="radio" value="a" /> The smallest model is always best.</label>
+              <label><input v-model="preAnswers.rightSizing" type="radio" value="b" /> Recommendations block larger models.</label>
+              <label><input v-model="preAnswers.rightSizing" type="radio" value="c" /> A larger model can be appropriate for complex work.</label>
+            </fieldset>
+            <button type="button" class="btn ghost solid" :disabled="studyBusy" @click="startStudy">
+              Start study task
+            </button>
+          </template>
+          <template v-else>
+            <p class="study-active">Study task active: complete one prompt flow, then answer the same questions again.</p>
+            <fieldset>
+              <legend>After using EcoPrompt</legend>
+              <label><input v-model="postAnswers.emissions" type="radio" value="a" /> It measures Groq’s exact emissions.</label>
+              <label><input v-model="postAnswers.emissions" type="radio" value="b" /> It shows a modelled carbon range.</label>
+              <label><input v-model="postAnswers.emissions" type="radio" value="c" /> It has no environmental information.</label>
+              <label><input v-model="postAnswers.usage" type="radio" value="a" /> Tokens after a response are provider-reported usage.</label>
+              <label><input v-model="postAnswers.usage" type="radio" value="b" /> Tokens are exact electricity measurements.</label>
+              <label><input v-model="postAnswers.usage" type="radio" value="c" /> Tokens reveal carbon intensity.</label>
+              <label><input v-model="postAnswers.rightSizing" type="radio" value="a" /> The smallest model is always best.</label>
+              <label><input v-model="postAnswers.rightSizing" type="radio" value="b" /> Recommendations block larger models.</label>
+              <label><input v-model="postAnswers.rightSizing" type="radio" value="c" /> A larger model can be appropriate for complex work.</label>
+            </fieldset>
+            <button type="button" class="btn ghost solid" :disabled="studyBusy" @click="completeStudy">
+              Complete study
+            </button>
+          </template>
         </section>
       </aside>
     </div>
