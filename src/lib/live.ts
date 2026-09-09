@@ -12,6 +12,10 @@ export interface LivePromptInput {
   wasRecommended: boolean
   storePrompt: boolean
   contextCleared: boolean
+  initialModelId?: ModelId
+  recommendedModelId?: ModelId
+  modelDecision?: 'keep' | 'switch' | 'override'
+  studySessionId?: string
   conversation: Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
@@ -22,7 +26,11 @@ export interface LivePromptResult {
   inputTokens: number
   outputTokens: number
   totalTokens: number
-  carbonG: number
+  modelledCarbon: {
+    lowG: number
+    centralG: number
+    highG: number
+  }
 }
 
 export async function executeLivePrompt(input: LivePromptInput) {

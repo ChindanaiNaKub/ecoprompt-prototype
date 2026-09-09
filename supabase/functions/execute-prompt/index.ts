@@ -14,16 +14,20 @@ interface PromptRequest {
   wasRecommended: boolean
   storePrompt: boolean
   contextCleared: boolean
+  initialModelId?: ModelId
+  recommendedModelId?: ModelId
+  modelDecision?: 'keep' | 'switch' | 'override'
+  studySessionId?: string
   conversation?: Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
-const MODELS: Record<ModelId, { providerModelId: string; whPer1kTokens: number }> = {
-  'gpt-oss-20b': { providerModelId: 'openai/gpt-oss-20b', whPer1kTokens: 0.08 },
-  'qwen-27b': { providerModelId: 'qwen/qwen3.6-27b', whPer1kTokens: 0.14 },
-  'gpt-oss-120b': { providerModelId: 'openai/gpt-oss-120b', whPer1kTokens: 0.42 },
+const MODELS: Record<ModelId, { providerModelId: string; whPer1kTokens: readonly [number, number, number] }> = {
+  'gpt-oss-20b': { providerModelId: 'openai/gpt-oss-20b', whPer1kTokens: [0.04, 0.08, 0.12] },
+  'qwen-27b': { providerModelId: 'qwen/qwen3.6-27b', whPer1kTokens: [0.07, 0.14, 0.21] },
+  'gpt-oss-120b': { providerModelId: 'openai/gpt-oss-120b', whPer1kTokens: [0.21, 0.42, 0.63] },
 }
 const GRID_INTENSITY_G_PER_WH = 0.48
-const METHODOLOGY_VERSION = '2026-09-groq-v1'
+const METHODOLOGY_VERSION = '2026-09-sensitivity-v1'
 const allowedOrigins = new Set([
   'https://chindanainakub.github.io',
   'http://localhost:5173',
@@ -70,7 +74,13 @@ Deno.serve(async (request) => {
     return error('Request body must be valid JSON.', 400, headers)
   }
 
-  if (!isPromptRequest(payload) || !MODELS[payload.modelId] || payload.prompt.trim().length === 0 || payload.prompt.length > 12000) {
+  if (
+    !isPromptRequest(payload) || !MODELS[payload.modelId] ||
+    (payload.initialModelId && !MODELS[payload.initialModelId]) ||
+    (payload.recommendedModelId && !MODELS[payload.recommendedModelId]) ||
+    (payload.modelDecision && !['keep', 'switch', 'override'].includes(payload.modelDecision)) ||
+    payload.prompt.trim().length === 0 || payload.prompt.length > 12000
+  ) {
     return error('Prompt request is invalid.', 400, headers)
   }
   if (payload.mode === 'dual' && (!payload.comparisonModelId || !MODELS[payload.comparisonModelId] || payload.comparisonModelId === payload.modelId)) {
@@ -88,6 +98,15 @@ Deno.serve(async (request) => {
   if (userError || !user) return error('Your sign-in session has expired.', 401, headers)
 
   const admin = createClient(supabaseUrl, serviceKey)
+  if (payload.studySessionId) {
+    const { data: session, error: sessionError } = await admin
+      .from('study_sessions')
+      .select('id')
+      .eq('id', payload.studySessionId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (sessionError || !session) return error('Study session is invalid.', 400, headers)
+  }
   const { data: allowed, error: allowanceError } = await admin.rpc('consume_daily_allowance', {
     p_user_id: user.id,
     p_kind: payload.mode,
@@ -120,7 +139,12 @@ Deno.serve(async (request) => {
       const inputTokens = Number(usage.prompt_tokens ?? 0)
       const outputTokens = Number(usage.completion_tokens ?? 0)
       const totalTokens = Number(usage.total_tokens ?? inputTokens + outputTokens)
-      const carbonG = (totalTokens / 1000) * model.whPer1kTokens * GRID_INTENSITY_G_PER_WH
+      const [lowWhPer1kTokens, centralWhPer1kTokens, highWhPer1kTokens] = model.whPer1kTokens
+      const modelledCarbon = {
+        lowG: (totalTokens / 1000) * lowWhPer1kTokens * GRID_INTENSITY_G_PER_WH,
+        centralG: (totalTokens / 1000) * centralWhPer1kTokens * GRID_INTENSITY_G_PER_WH,
+        highG: (totalTokens / 1000) * highWhPer1kTokens * GRID_INTENSITY_G_PER_WH,
+      }
       return {
         modelId,
         providerModelId: model.providerModelId,
@@ -128,7 +152,7 @@ Deno.serve(async (request) => {
         inputTokens,
         outputTokens,
         totalTokens,
-        carbonG,
+        modelledCarbon,
       }
     }))
 
@@ -144,7 +168,13 @@ Deno.serve(async (request) => {
       input_tokens: result.inputTokens,
       output_tokens: result.outputTokens,
       total_tokens: result.totalTokens,
-      actual_carbon_g: result.carbonG,
+      modelled_carbon_low_g: result.modelledCarbon.lowG,
+      modelled_carbon_central_g: result.modelledCarbon.centralG,
+      modelled_carbon_high_g: result.modelledCarbon.highG,
+      initial_model_id: payload.initialModelId ?? payload.modelId,
+      recommended_model_id: payload.recommendedModelId ?? payload.modelId,
+      model_decision: payload.modelDecision ?? 'keep',
+      study_session_id: payload.studySessionId ?? null,
       prompt_length: payload.prompt.trim().length,
       prompt_text: payload.storePrompt ? payload.prompt.trim() : null,
       prompt_storage_consented: payload.storePrompt,
