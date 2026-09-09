@@ -35,12 +35,25 @@ export interface LivePromptResult {
 
 export async function executeLivePrompt(input: LivePromptInput) {
   if (!supabase) throw new Error('Live mode is not configured.')
+  
   const { data, error } = await supabase.functions.invoke<{
     results: LivePromptResult[]
     comparisonId: string | null
     methodologyVersion: string
   }>('execute-prompt', { body: input })
-  if (error) throw new Error(error.message)
+
+  if (error) {
+    let errorMessage = error.message
+    try {
+      const context = await (error as any).context?.json()
+      if (context?.error) {
+        errorMessage = context.error
+      }
+    } catch {
+    }
+    throw new Error(errorMessage)
+  }
+
   if (!data?.results?.length) throw new Error('The server returned no model response.')
   return data
 }
