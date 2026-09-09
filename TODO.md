@@ -1,81 +1,95 @@
-# EcoPrompt team task board
+# EcoPrompt — 14 September delivery board
 
-## How to use this board
+## Delivery rule
 
-Create one GitHub issue for each unchecked item below. Assign the listed owner, use the issue title as written, and link the dependency issue before starting work. Work is split across all four members; no one person owns the whole app.
+**Every proposed feature must be working in the deployed app by 14 September.** This board deliberately shares difficult work across the team. Do not wait for one person to finish an entire layer before another starts.
 
-**Deadlines:** core live app by **14 September**; feature-complete app and report evidence by **25 September**.
+Create one GitHub issue per checkbox below. The person named first is the owner; the named support person reviews, pairs, or unblocks that issue. Run `bun run build` before asking for review.
 
-## Kirana — project lead, integration, and ethics
+## What “complete” means on 14 September
 
-- [ ] **P0 — Configure deployment and ethical safeguards** — due 10 Sep
-  - Create the Supabase project, configure Email magic-link Auth, permitted redirect URLs, and GitHub Pages build variables.
-  - Create one Groq Free Plan account, add `GROQ_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` only as Supabase Edge Function secrets, then enable Groq Zero Data Retention.
-  - Follow [docs/SETUP.md](docs/SETUP.md); never commit keys.
-  - Depends on: none.
-  - Done when: a teammate can sign in from the deployed site and secrets are absent from browser code/repository.
+- A signed-in user sends a real prompt to Groq, sees a pre-send estimate and post-response actual-token estimate, and can keep or switch models.
+- Prompt storage is opt-in; metadata history is private; saved prompt text can be deleted.
+- All five quests, badges, browser-only context clearing, opt-in dual-model comparison, and positive-only leaderboard are usable—not mock data.
+- Groq/Supabase secrets remain server-side; the deployed GitHub Pages app handles loading, sign-in, quota, and provider-error states.
 
-- [ ] **P0 — Integrate, deploy, and run the release gate** — due 14 Sep
-  - Merge verified work, deploy database migration and Edge Function, run the full demo flow on GitHub Pages, and document known free-tier limits.
-  - Review privacy copy, error states, keyboard navigation, and mobile layout.
-  - Depends on: Titipon P0 backend, Chindanai P0 dashboard, Atiwit methodology.
-  - Done when: sign-in → estimate → real response → actual usage works in production without exposing a secret.
+## Critical path — start 9 September
 
-- [ ] **P1 — Final ethics/accessibility/report integration** — due 25 Sep
-  - Turn research and testing findings into final-report evidence; document autonomy, fairness, privacy, security, and estimation limitations.
-  - Depends on: all P1 work and testing results.
+### 1. Kirana + Titipon — Provision and prove the live platform
 
-## Chindanai — frontend and UX
+- [ ] **Configure Supabase, Groq, GitHub Pages variables, and data controls** — owner: Kirana; support: Titipon; due **9 Sep**
+  - Create Supabase project; enable magic-link Auth; add local and GitHub Pages redirect URLs.
+  - Create Groq Free account; enable Zero Data Retention; add `GROQ_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` only as Supabase Function secrets.
+  - Put only `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` into GitHub Actions build variables.
+  - Done when: no secret appears in the repository/browser, and a test user receives a magic link.
 
-- [ ] **P0 — Connect dashboard to magic-link sign-in and live Groq flow** — due 13 Sep
-  - Use `src/lib/supabase.ts` and `src/lib/live.ts`; add sign-in/sign-out, live/demo status, complexity override, prompt-storage consent, loading, and quota/error states.
-  - Replace simulated response only when a signed-in live backend is configured; preserve a clearly labeled local demo fallback.
-  - Depends on: Titipon P0 backend contract.
-  - Done when: actual response tokens and post-response carbon estimate replace the pre-send estimate.
+- [ ] **Deploy schema and Groq Edge Function; prove one real request** — owner: Titipon; support: Kirana; due **10 Sep**
+  - Deploy `supabase/migrations/202609090001_ecoprompt.sql` and `execute-prompt`.
+  - Verify JWT validation, Groq response/usage parsing, 20 normal + 3 dual daily limits, 429 message, RLS isolation, and metadata-only writes.
+  - Done when: a curl/browser test creates a private request event with real provider token counts.
 
-- [ ] **P1 — Private history and prompt deletion UI** — due 18 Sep
-  - Show only the signed-in user’s metadata history. Make prompt storage per-request opt-in and add delete-saved-text control.
-  - Depends on: Titipon P0 schema/RLS.
+### 2. Chindanai + Kirana — Build the live user journey in parallel
 
-- [ ] **P1 — Quests, badges, and browser-only chat context** — due 20 Sep
-  - Implement all five quests, badge display, and a minimal current-session conversation where users can remove old turns before sending.
-  - Do not persist conversation responses or context by default.
-  - Depends on: Titipon quest persistence contract.
+- [ ] **Core dashboard: sign-in, estimate, override, switch/keep, and live response** — owner: Chindanai; support: Kirana; due **11 Sep**
+  - Connect `src/lib/supabase.ts` and `src/lib/live.ts` to the existing dashboard.
+  - Add magic-link sign-in/sign-out, configured/demo state, complexity override, prompt-storage consent, loading state, and useful provider/quota errors.
+  - Show actual input/output tokens and post-response carbon after a live send; preserve local demo fallback only when no public Supabase configuration exists.
+  - Depends on: Task 1 infrastructure; backend contract from Task 2.
 
-- [ ] **P1 — Dual-model comparison and leaderboard UI** — due 22 Sep
-  - Require acknowledgement before a dual run, show both outputs/actual estimates, and show only eligible opted-in efficient users.
-  - Depends on: Titipon P1 comparison and leaderboard API.
+- [ ] **Private history and public leaderboard screens** — owner: Kirana; support: Chindanai; due **12 Sep**
+  - Add private event history, delete-saved-prompt action, display-name edit, and leaderboard opt-in control.
+  - Render `get_efficiency_leaderboard()` results only; never expose raw events or a negative ranking.
+  - Depends on: Task 2 schema/RLS; can use static UI fixtures until function deploy completes.
 
-## Titipon — backend and estimation integration
+### 3. Titipon + Chindanai — Finish persistence and learning features
 
-- [ ] **P0 — Deploy and verify Supabase schema, Auth, and RLS** — due 11 Sep
-  - Deploy `supabase/migrations/202609090001_ecoprompt.sql` and verify users can read only their own records.
-  - Validate profile creation, prompt-text deletion, daily allowance, and leaderboard RPC permissions.
-  - Depends on: Kirana’s Supabase project.
+- [ ] **Persist quests, badges, dual runs, and leaderboard eligibility** — owner: Titipon; support: Chindanai; due **12 Sep**
+  - Extend the Edge Function/database path so completed requests atomically update quest progress and award one badge per quest.
+  - Store linked dual-run events and expose safe progress/leaderboard reads through RLS/RPC.
+  - Done when: progress survives refresh, prompt text remains absent without consent, and users cannot read another user’s events.
+  - Depends on: Task 2.
 
-- [ ] **P0 — Deploy and verify the Groq Edge Function** — due 12 Sep
-  - Deploy `supabase/functions/execute-prompt`; verify JWT validation, Groq Chat Completions, fixed output caps, 20 normal/3 dual daily allowance, metadata-only writes, and useful 429 errors.
-  - Depends on: Kirana’s Groq key and Supabase secrets; deployed migration.
+- [ ] **Comparison experiment and browser-only context controls** — owner: Chindanai; support: Titipon; due **12 Sep**
+  - Add explicit acknowledgement before a dual-model request, side-by-side outputs and actual usage, plus clear 429/failure behavior.
+  - Keep current conversation in browser memory only; let users remove earlier turns before a request and record only the context-cleared event.
+  - Depends on: Task 2; coordinate payload fields with Task 5.
 
-- [ ] **P1 — Persist quests and implement dual-run/leaderboard backend** — due 21 Sep
-  - Add atomic quest/badge updates after saved request events, linked dual-run records, and an eligible-user leaderboard query ranked by right-size adherence.
-  - Depends on: P0 backend.
+### 4. Atiwit — unblock methodology and make the release defensible
 
-## Atiwit — research, testing, and report evidence
+- [ ] **Publish methodology values and in-app transparency copy** — owner: Atiwit; support: Kirana; due **10 Sep**
+  - Supply one versioned coefficient table for the three selected Groq models, Thailand grid factor, formula, uncertainty statement, and citation links.
+  - Supply short UI copy for “estimate,” provider processing, prompt-storage consent, dual-run extra impact, and quota limits.
+  - Done when: Titipon has final constants/version and Chindanai can display the approved language.
 
-- [ ] **P0 — Publish carbon-estimation methodology** — due 10 Sep
-  - Replace provisional model coefficients with a cited, versioned methodology for the three Groq-hosted models; state Thailand grid assumption, central ranges, formula, uncertainty, and source links.
-  - Give Titipon the final coefficients/version and Chindanai short in-app explanation copy.
-  - Depends on: none.
+- [ ] **Run a compact acceptance study and capture evidence** — owner: Atiwit; support: all; due **13 Sep**
+  - Test the deployed app with at least 3 think-aloud users and 5 short survey responses before the deadline; expand to the planned 5/10 after release if time permits.
+  - Record task completion, estimate comprehension, user control, privacy clarity, and quota-error understanding.
+  - Done when: findings and screenshots are ready for the submission/report.
 
-- [ ] **P1 — Run usability study and prepare findings** — due 23 Sep
-  - Run five think-aloud sessions and a ten-person anonymous SE-student survey.
-  - Measure task completion, estimate-vs-actual comprehension, user control over recommendations, privacy clarity, quota-error clarity, and leaderboard fairness.
-  - Depends on: deployed P1 app.
+## Final integration and release
 
-## Shared working agreement
+- [ ] **Full-team release rehearsal** — owner: Kirana; support: everyone; due **13 Sep**
+  - Test the exact demo: sign in → simple prompt/large model → switch → real response/actual estimate → quest/badge → history → opt-in dual comparison → leaderboard.
+  - Fix only release-blocking failures: secrets, login, request execution, persistence, mobile/keyboard blockers, or misleading estimate labels.
 
-- Make a branch per issue; open a pull request to `main` with screenshots or test evidence.
-- Do not change another owner’s files without telling them in the issue/PR.
-- Run `bun run build` before requesting review.
-- Treat provider/model availability and all carbon values as estimates; never claim exact emissions or unlimited free usage.
+- [ ] **Deploy and submit working app** — owner: Kirana; support: everyone; due **14 Sep**
+  - Verify GitHub Pages production build, Supabase Function, and public demo link on a fresh browser session.
+  - Attach screenshots, methodology source link, and known free-tier limitations to the submission.
+
+## Ownership boundaries
+
+| Person | Owns | Must not become a bottleneck for |
+|---|---|---|
+| Kirana | setup, deployment, release QA, history/leaderboard UI | core dashboard implementation |
+| Chindanai | core dashboard, comparison, chat-context UI | Supabase deployment or research values |
+| Titipon | schema, Edge Function, quest/badge persistence | visual styling and report copy |
+| Atiwit | methodology, consent/explanation copy, testing evidence | backend implementation |
+
+## Daily checkpoint
+
+- **9 Sep:** accounts/secrets configured; methodology values delivered; migration/function deployment started.
+- **10 Sep:** one real Groq request is persisted; dashboard integration underway.
+- **11 Sep:** complete signed-in core flow works on a preview/deployed URL.
+- **12 Sep:** history, quests/badges, context clearing, dual run, and leaderboard work together.
+- **13 Sep:** rehearsal, user checks, only release blockers fixed.
+- **14 Sep:** production verification and submission.
