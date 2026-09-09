@@ -443,7 +443,7 @@ async function signOut() {
         <section class="rail-block study">
           <h2>Optional study</h2>
           <p class="rail-note">
-            This anonymous-style course study records two quiz scores and your model decision. It
+            This pseudonymous course study records two quiz scores and your model decision. It
             never exports your email or prompt text.
           </p>
           <template v-if="!studySessionId">
