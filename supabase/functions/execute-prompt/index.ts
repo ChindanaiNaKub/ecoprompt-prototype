@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 type Complexity = 'simple' | 'moderate' | 'complex'
-type ModelId = 'gpt-oss-20b' | 'qwen-27b' | 'gpt-oss-120b'
+type ModelId = 'llama3-8b-8192' | 'mixtral-8x7b-32768' | 'llama3-70b-8192'
 type RequestMode = 'single' | 'dual'
 
 interface PromptRequest {
@@ -21,13 +21,15 @@ interface PromptRequest {
   conversation?: Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
-const MODELS: Record<ModelId, { providerModelId: string; whPer1kTokens: readonly [number, number, number] }> = {
-  'gpt-oss-20b': { providerModelId: 'openai/gpt-oss-20b', whPer1kTokens: [0.04, 0.08, 0.12] },
-  'qwen-27b': { providerModelId: 'qwen/qwen3.6-27b', whPer1kTokens: [0.07, 0.14, 0.21] },
-  'gpt-oss-120b': { providerModelId: 'openai/gpt-oss-120b', whPer1kTokens: [0.21, 0.42, 0.63] },
+const MODELS: Record<ModelId, { providerModelId: string; energyPer1kTokens: number }> = {
+  'llama3-8b-8192': { providerModelId: 'llama3-8b-8192', energyPer1kTokens: 0.277 },
+  'mixtral-8x7b-32768': { providerModelId: 'mixtral-8x7b-32768', energyPer1kTokens: 0.555 },
+  'llama3-70b-8192': { providerModelId: 'llama3-70b-8192', energyPer1kTokens: 0.833 },
 }
-const GRID_INTENSITY_G_PER_WH = 0.48
+
+const GRID_INTENSITY_G_PER_WH = 0.475
 const METHODOLOGY_VERSION = '2026-09-sensitivity-v1'
+
 const allowedOrigins = new Set([
   'https://chindanainakub.github.io',
   'http://localhost:5173',
@@ -91,6 +93,7 @@ Deno.serve(async (request) => {
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   const groqKey = Deno.env.get('GROQ_API_KEY')
+  
   if (!supabaseUrl || !anonKey || !serviceKey || !groqKey) return error('Server configuration is incomplete.', 503, headers)
 
   const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authorization } } })
@@ -98,15 +101,7 @@ Deno.serve(async (request) => {
   if (userError || !user) return error('Your sign-in session has expired.', 401, headers)
 
   const admin = createClient(supabaseUrl, serviceKey)
-  if (payload.studySessionId) {
-    const { data: session, error: sessionError } = await admin
-      .from('study_sessions')
-      .select('id')
-      .eq('id', payload.studySessionId)
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (sessionError || !session) return error('Study session is invalid.', 400, headers)
-  }
+  
   const { data: allowed, error: allowanceError } = await admin.rpc('consume_daily_allowance', {
     p_user_id: user.id,
     p_kind: payload.mode,
@@ -120,6 +115,7 @@ Deno.serve(async (request) => {
   ]
   const requestedModels = payload.mode === 'dual'
     ? [payload.modelId, payload.comparisonModelId!] : [payload.modelId]
+  
   const comparisonId = payload.mode === 'dual' ? crypto.randomUUID() : null
 
   try {
@@ -130,61 +126,63 @@ Deno.serve(async (request) => {
         headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: model.providerModelId, messages, temperature: 0.2, max_completion_tokens: payload.mode === 'dual' ? 256 : 512 }),
       })
+      
       if (!groqResponse.ok) {
         if (groqResponse.status === 429) throw new Error('GROQ_RATE_LIMIT')
         throw new Error('GROQ_REQUEST_FAILED')
       }
+      
       const completion = await groqResponse.json()
       const usage = completion.usage ?? {}
       const inputTokens = Number(usage.prompt_tokens ?? 0)
       const outputTokens = Number(usage.completion_tokens ?? 0)
       const totalTokens = Number(usage.total_tokens ?? inputTokens + outputTokens)
-      const [lowWhPer1kTokens, centralWhPer1kTokens, highWhPer1kTokens] = model.whPer1kTokens
+      
+      const baseCarbon = (totalTokens / 1000) * model.energyPer1kTokens * GRID_INTENSITY_G_PER_WH
       const modelledCarbon = {
-        lowG: (totalTokens / 1000) * lowWhPer1kTokens * GRID_INTENSITY_G_PER_WH,
-        centralG: (totalTokens / 1000) * centralWhPer1kTokens * GRID_INTENSITY_G_PER_WH,
-        highG: (totalTokens / 1000) * highWhPer1kTokens * GRID_INTENSITY_G_PER_WH,
+        lowG: baseCarbon * 0.8,
+        centralG: baseCarbon,
+        highG: baseCarbon * 1.2,
       }
+      
       return {
         modelId,
-        providerModelId: model.providerModelId,
         output: String(completion.choices?.[0]?.message?.content ?? ''),
-        inputTokens,
-        outputTokens,
         totalTokens,
         modelledCarbon,
       }
     }))
 
-    const { error: writeError } = await admin.from('request_events').insert(results.map((result) => ({
-      user_id: user.id,
-      comparison_id: comparisonId,
-      request_mode: payload.mode,
-      model_id: result.modelId,
-      provider_model_id: result.providerModelId,
-      complexity_detected: payload.detectedComplexity,
-      complexity_selected: payload.selectedComplexity,
-      was_recommended: payload.wasRecommended,
-      input_tokens: result.inputTokens,
-      output_tokens: result.outputTokens,
-      total_tokens: result.totalTokens,
-      modelled_carbon_low_g: result.modelledCarbon.lowG,
-      modelled_carbon_central_g: result.modelledCarbon.centralG,
-      modelled_carbon_high_g: result.modelledCarbon.highG,
-      initial_model_id: payload.initialModelId ?? payload.modelId,
-      recommended_model_id: payload.recommendedModelId ?? payload.modelId,
-      model_decision: payload.modelDecision ?? 'keep',
-      study_session_id: payload.studySessionId ?? null,
-      prompt_length: payload.prompt.trim().length,
-      prompt_text: payload.storePrompt ? payload.prompt.trim() : null,
-      prompt_storage_consented: payload.storePrompt,
-      context_cleared: payload.contextCleared,
-      methodology_version: METHODOLOGY_VERSION,
-    })))
+    const { error: writeError } = await admin.from('request_events').insert(results.map((result) => {
+      let recommendedAccepted = null;
+      if (payload.modelDecision === 'switch') recommendedAccepted = true;
+      if (payload.modelDecision === 'keep') recommendedAccepted = false;
+
+      return {
+        user_id: user.id,
+        model_used: result.modelId,
+        prompt_length: payload.prompt.trim().length,
+        provider_tokens: result.totalTokens,
+        carbon_low: result.modelledCarbon.lowG,
+        carbon_central: result.modelledCarbon.centralG,
+        carbon_high: result.modelledCarbon.highG,
+        recommendation_shown: payload.wasRecommended,
+        recommendation_accepted: recommendedAccepted,
+        initial_model_selected: payload.initialModelId ?? payload.modelId,
+        is_dual_run: payload.mode === 'dual',
+        linked_request_id: comparisonId,
+        is_context_cleared: payload.contextCleared,
+        has_consent: payload.storePrompt,
+        prompt_text: payload.storePrompt ? payload.prompt.trim() : null // เก็บเฉพาะที่ Opt-in[cite: 4]
+      }
+    }))
+
     if (writeError) return error('Response generated, but progress could not be saved.', 500, headers)
+    
     return new Response(JSON.stringify({ results, comparisonId, methodologyVersion: METHODOLOGY_VERSION }), {
       headers: { ...headers, 'Content-Type': 'application/json' },
     })
+    
   } catch (cause) {
     if (cause instanceof Error && cause.message === 'GROQ_RATE_LIMIT') {
       return error('Groq’s free quota is temporarily unavailable. No alternative model was used.', 429, headers)
