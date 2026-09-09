@@ -1,54 +1,47 @@
-export type ModelId = 'gpt-oss-20b' | 'qwen-27b' | 'gpt-oss-120b'
+export type ModelId = 'llama3-8b-8192' | 'mixtral-8x7b-32768' | 'llama3-70b-8192'
 
 export type ModelTier = 'large' | 'medium' | 'small'
 
 export interface ModelInfo {
   id: ModelId
-  /** Provider-specific Groq model identifier. */
   providerModelId: string
   name: string
   provider: 'Groq'
   tier: ModelTier
-  /** Central scenario in the versioned methodology. It is not a measured provider value. */
   energyWhPer1kTokens: number
-  /** Sensitivity scenarios around the central assumption, in Wh per 1k tokens. */
   energyWhRangePer1kTokens: readonly [low: number, central: number, high: number]
   capability: number
 }
 
-/**
- * Groq's free-plan catalog, pinned rather than automatically routed so comparisons
- * remain reproducible.
- */
 export const MODELS: ModelInfo[] = [
   {
-    id: 'gpt-oss-20b',
-    providerModelId: 'openai/gpt-oss-20b',
-    name: 'GPT-OSS 20B',
+    id: 'llama3-8b-8192',
+    providerModelId: 'llama3-8b-8192',
+    name: 'Llama 3 8B (Fast & Light)',
     provider: 'Groq',
     tier: 'small',
-    energyWhPer1kTokens: 0.08,
-    energyWhRangePer1kTokens: [0.04, 0.08, 0.12],
+    energyWhPer1kTokens: 0.277,
+    energyWhRangePer1kTokens: [0.2216, 0.277, 0.3324],
     capability: 2,
   },
   {
-    id: 'qwen-27b',
-    providerModelId: 'qwen/qwen3.6-27b',
-    name: 'Qwen 27B',
+    id: 'mixtral-8x7b-32768',
+    providerModelId: 'mixtral-8x7b-32768',
+    name: 'Mixtral 8x7B (Balanced)',
     provider: 'Groq',
     tier: 'medium',
-    energyWhPer1kTokens: 0.14,
-    energyWhRangePer1kTokens: [0.07, 0.14, 0.21],
+    energyWhPer1kTokens: 0.555,
+    energyWhRangePer1kTokens: [0.444, 0.555, 0.666],
     capability: 3,
   },
   {
-    id: 'gpt-oss-120b',
-    providerModelId: 'openai/gpt-oss-120b',
-    name: 'GPT-OSS 120B',
+    id: 'llama3-70b-8192',
+    providerModelId: 'llama3-70b-8192',
+    name: 'Llama 3 70B (Complex Reasoning)',
     provider: 'Groq',
     tier: 'large',
-    energyWhPer1kTokens: 0.42,
-    energyWhRangePer1kTokens: [0.21, 0.42, 0.63],
+    energyWhPer1kTokens: 0.833,
+    energyWhRangePer1kTokens: [0.6664, 0.833, 0.9996],
     capability: 5,
   },
 ]
