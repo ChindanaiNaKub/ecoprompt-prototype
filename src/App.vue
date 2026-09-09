@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { MODELS, type ModelId } from './lib/models'
 import { recommend, type Recommendation } from './lib/recommend'
 import {
@@ -16,6 +16,8 @@ import {
   type GamificationState,
 } from './lib/quests'
 import { beginStudy, finishStudy, scoreStudy, type StudyAnswers } from './lib/study'
+import { executeLivePrompt, type LivePromptResult } from './lib/live'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 const prompt = ref(
   'Translate this sentence to Thai: Software engineers should consider environmental impact.',
@@ -25,13 +27,19 @@ const game = ref<GamificationState>(initialGamification())
 const showCompare = ref(false)
 const lastRec = ref<Recommendation | null>(null)
 const reply = ref<string | null>(null)
+const providerUsage = ref<LivePromptResult | null>(null)
 const toast = ref<string | null>(null)
 const studySessionId = ref<string | null>(null)
 const studyConsent = ref(false)
 const preAnswers = ref<Partial<StudyAnswers>>({})
 const postAnswers = ref<Partial<StudyAnswers>>({})
 const studyBusy = ref(false)
+const email = ref('')
+const signedInEmail = ref<string | null>(null)
+const authBusy = ref(false)
+const sending = ref(false)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
+let stopAuthListener: (() => void) | null = null
 
 const liveEstimate = computed(() => recommend(prompt.value, modelId.value))
 const leaderboard = computed(() => demoLeaderboard(game.value))
@@ -62,9 +70,19 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 window.addEventListener('keydown', onKeydown)
+onMounted(async () => {
+  if (!supabase) return
+  const { data } = await supabase.auth.getSession()
+  signedInEmail.value = data.session?.user.email ?? null
+  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    signedInEmail.value = session?.user.email ?? null
+  })
+  stopAuthListener = () => listener.subscription.unsubscribe()
+})
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   if (toastTimer) clearTimeout(toastTimer)
+  stopAuthListener?.()
 })
 
 function looksBatched(text: string) {
@@ -78,17 +96,21 @@ function openFlow() {
     showToast('Enter a prompt first.')
     return
   }
+  if (isSupabaseConfigured && !signedInEmail.value) {
+    showToast('Sign in with email before sending a live prompt.')
+    return
+  }
   const rec = recommend(prompt.value, modelId.value)
   lastRec.value = rec
   reply.value = null
   if (rec.mismatch) {
     showCompare.value = true
   } else {
-    finishRequest(false, rec)
+    void finishRequest(false, rec)
   }
 }
 
-function finishRequest(switched: boolean, rec: Recommendation) {
+async function finishRequest(switched: boolean, rec: Recommendation) {
   showCompare.value = false
   if (switched) {
     modelId.value = rec.suggested.id
@@ -118,22 +140,49 @@ function finishRequest(switched: boolean, rec: Recommendation) {
     looksBatched: looksBatched(prompt.value),
   })
 
+  providerUsage.value = null
+  if (isSupabaseConfigured) {
+    sending.value = true
+    try {
+      const result = await executeLivePrompt({
+        prompt: prompt.value,
+        modelId: finalModel,
+        mode: 'single',
+        detectedComplexity: rec.complexity,
+        selectedComplexity: finalRec.complexity,
+        wasRecommended: finalModel === rec.suggested.id,
+        storePrompt: false,
+        contextCleared: false,
+        initialModelId: rec.current.id,
+        recommendedModelId: rec.suggested.id,
+        modelDecision: switched ? 'switch' : 'keep',
+        studySessionId: studySessionId.value ?? undefined,
+        conversation: [],
+      })
+      providerUsage.value = result.results[0]
+      reply.value = providerUsage.value.output
+      showToast(`Provider reported ${formatTokens(providerUsage.value.totalTokens)} tokens.`)
+    } catch (cause) {
+      reply.value = null
+      showToast(cause instanceof Error ? cause.message : 'The live request failed.')
+    } finally {
+      sending.value = false
+    }
+    return
+  }
+
   reply.value = mockReply(prompt.value, finalRec)
-  showToast(
-    switched
-      ? `Switched to ${rec.suggested.name}. Saved ~${formatCarbon(carbonSaved)}.`
-      : `Sent with ${finalRec.current.name}.`,
-  )
+  showToast('Local demo response. Configure Supabase and sign in for provider-reported usage.')
 }
 
 function keepCurrent() {
   if (!lastRec.value) return
-  finishRequest(false, lastRec.value)
+  void finishRequest(false, lastRec.value)
 }
 
 function switchAndContinue() {
   if (!lastRec.value) return
-  finishRequest(true, lastRec.value)
+  void finishRequest(true, lastRec.value)
 }
 
 function mockReply(text: string, rec: Recommendation) {
@@ -156,6 +205,7 @@ function useSample(kind: 'simple' | 'complex') {
     modelId.value = 'gpt-oss-20b'
   }
   reply.value = null
+  providerUsage.value = null
   showCompare.value = false
 }
 
@@ -192,6 +242,32 @@ async function completeStudy() {
     studyBusy.value = false
   }
 }
+
+async function sendMagicLink() {
+  if (!supabase || !email.value.trim()) {
+    showToast('Enter your email address first.')
+    return
+  }
+  authBusy.value = true
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.value.trim(),
+      options: { emailRedirectTo: window.location.href },
+    })
+    if (error) throw error
+    showToast('Check your email for the sign-in link.')
+  } catch (cause) {
+    showToast(cause instanceof Error ? cause.message : 'Could not send sign-in link.')
+  } finally {
+    authBusy.value = false
+  }
+}
+
+async function signOut() {
+  if (!supabase) return
+  await supabase.auth.signOut()
+  showToast('Signed out.')
+}
 </script>
 
 <template>
@@ -199,6 +275,16 @@ async function completeStudy() {
     <div class="proto">
       <span class="proto-mark">PROTOTYPE</span>
       <span>Ethics 953420 · Group 13 · modelled ranges, not measured emissions</span>
+      <form v-if="isSupabaseConfigured && !signedInEmail" class="auth" @submit.prevent="sendMagicLink">
+        <label class="sr-only" for="email">Email</label>
+        <input id="email" v-model="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+        <button type="submit" class="btn ghost solid" :disabled="authBusy">Email sign-in</button>
+      </form>
+      <div v-else-if="signedInEmail" class="auth">
+        <span>Signed in: {{ signedInEmail }}</span>
+        <button type="button" class="btn ghost solid" @click="signOut">Sign out</button>
+      </div>
+      <span v-else>Local demo mode · provider usage unavailable</span>
     </div>
 
     <header class="masthead">
@@ -290,10 +376,18 @@ async function completeStudy() {
           <li v-for="(r, i) in liveEstimate.reasons" :key="i">{{ r }}</li>
         </ul>
 
-        <button type="button" class="btn primary" @click="openFlow">Estimate &amp; send</button>
+        <button type="button" class="btn primary" :disabled="sending" @click="openFlow">
+          {{ sending ? 'Sending…' : 'Estimate & send' }}
+        </button>
 
         <article v-if="reply" class="reply">
           <h3>Response</h3>
+          <p v-if="providerUsage" class="mono faint">
+            Provider-reported usage: {{ formatTokens(providerUsage.inputTokens) }} input +
+            {{ formatTokens(providerUsage.outputTokens) }} output =
+            {{ formatTokens(providerUsage.totalTokens) }} tokens<br />
+            Modelled carbon range: {{ formatCarbonRange(providerUsage.modelledCarbon) }}
+          </p>
           <pre class="mono">{{ reply }}</pre>
         </article>
       </section>
