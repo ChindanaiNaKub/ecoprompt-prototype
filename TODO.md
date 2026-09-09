@@ -8,10 +8,11 @@ Create one GitHub issue per checkbox below. The person named first is the owner;
 
 ## What “complete” means on 14 September
 
-- A signed-in user sends a real prompt to Groq, sees a pre-send estimate and post-response actual-token estimate, and can keep or switch models.
+- A signed-in user sends a real prompt to Groq, sees a pre-send modeled range and post-response provider-reported token usage, and can keep or switch models.
 - Prompt storage is opt-in; metadata history is private; saved prompt text can be deleted.
 - All five quests, badges, browser-only context clearing, opt-in dual-model comparison, and positive-only leaderboard are usable—not mock data.
 - Groq/Supabase secrets remain server-side; the deployed GitHub Pages app handles loading, sign-in, quota, and provider-error states.
+- Carbon claims use low/central/high modelled scenarios with a methodology version; they never claim measured Groq emissions.
 
 ## Critical path — start 9 September
 
@@ -57,20 +58,20 @@ Create one GitHub issue per checkbox below. The person named first is the owner;
 ### 4. Atiwit — unblock methodology and make the release defensible
 
 - [ ] **Publish methodology values and in-app transparency copy** — owner: Atiwit; support: Kirana; due **10 Sep**
-  - Supply one versioned coefficient table for the three selected Groq models, Thailand grid factor, formula, uncertainty statement, and citation links.
+  - Triangulate at least two sources, then supply a versioned low/central/high coefficient table for the three selected Groq models, Thailand grid factor, formula, uncertainty statement, and citation links.
   - Supply short UI copy for “estimate,” provider processing, prompt-storage consent, dual-run extra impact, and quota limits.
   - Done when: Titipon has final constants/version and Chindanai can display the approved language.
 
 - [ ] **Run a compact acceptance study and capture evidence** — owner: Atiwit; support: all; due **13 Sep**
-  - Test the deployed app with at least 3 think-aloud users and 5 short survey responses before the deadline; expand to the planned 5/10 after release if time permits.
-  - Record task completion, estimate comprehension, user control, privacy clarity, and quota-error understanding.
+  - Run five consented pseudonymous pre/post sessions using the in-app three-question study flow.
+  - Record task completion, pre/post knowledge score, initial/final model selection, recommendation acceptance, privacy clarity, and quota-error understanding; export no email or prompt text.
   - Done when: findings and screenshots are ready for the submission/report.
 
 ## Final integration and release
 
 - [ ] **Full-team release rehearsal** — owner: Kirana; support: everyone; due **13 Sep**
   - Test the exact demo: sign in → simple prompt/large model → switch → real response/actual estimate → quest/badge → history → opt-in dual comparison → leaderboard.
-  - Fix only release-blocking failures: secrets, login, request execution, persistence, mobile/keyboard blockers, or misleading estimate labels.
+  - Fix only release-blocking failures: secrets, login, request execution, persistence, mobile/keyboard blockers, misleading estimate labels, or claims of measured emissions.
 
 - [ ] **Deploy and submit working app** — owner: Kirana; support: everyone; due **14 Sep**
   - Verify GitHub Pages production build, Supabase Function, and public demo link on a fresh browser session.

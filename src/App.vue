@@ -578,6 +578,64 @@ async function signOut() {
   letter-spacing: 0.04em;
 }
 
+.auth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.auth input {
+  min-width: 11rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  padding: 0.35rem 0.45rem;
+  background: var(--surface);
+}
+
+.methodology {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.methodology summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.methodology p {
+  margin: 0.35rem 0 0;
+}
+
+.study fieldset {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.8rem 0;
+  border: 1px solid var(--line);
+  padding: 0.65rem;
+  font-size: 0.8rem;
+}
+
+.study legend {
+  padding: 0 0.25rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.study label,
+.consent {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.study-active {
+  color: var(--cool);
+  font-weight: 600;
+}
+
 .masthead {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;

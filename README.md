@@ -4,15 +4,15 @@
 
 **Course:** Ethics and Professionalism for Software Engineers (953420) · Group 13
 
-Throwaway interactive prototype for the course milestone. Not production.
+Interactive course prototype for teaching transparent, carbon-aware model selection. It does not measure provider emissions.
 
 ## What it shows
 
-1. **Carbon & token estimator** — live estimate from prompt + model
+1. **Provider tokens + modelled carbon range** — a pre-send scenario and provider-reported token usage after live requests
 2. **Comparison pop-up** — right-size recommendation with Switch / Keep
 3. **Quests, badges, efficient-user leaderboard** — light gamification
 
-No real AI API calls. All carbon figures are **estimates**.
+Live requests use Groq through a Supabase Edge Function when configured. Carbon figures are low/central/high modelled operational scenarios, not measured Groq emissions. See [methodology and limitations](docs/METHODOLOGY.md).
 
 ## Demo path (~2 min)
 
@@ -20,11 +20,16 @@ No real AI API calls. All carbon figures are **estimates**.
 2. Click **Switch & continue** → quest progress updates
 3. Click **Complex + small** → upsizing suggestion
 
+## Live deployment
+
+GitHub Pages hosts the Vue app. Supabase provides magic-link authentication, data storage, and the protected Groq function. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as GitHub repository variables; keep Groq and service-role keys only in Supabase secrets. Follow [deployment setup](docs/SETUP.md).
+
 ## Local run
 
 ```bash
 bun install
 bun run dev
+bun test
 ```
 
 ## Stack
