@@ -19,7 +19,7 @@ import {
 const prompt = ref(
   'Translate this sentence to Thai: Software engineers should consider environmental impact.',
 )
-const modelId = ref<ModelId>('gpt-4o')
+const modelId = ref<ModelId>('gpt-oss-120b')
 const game = ref<GamificationState>(initialGamification())
 const showCompare = ref(false)
 const lastRec = ref<Recommendation | null>(null)
@@ -143,11 +143,11 @@ function mockReply(text: string, rec: Recommendation) {
 function useSample(kind: 'simple' | 'complex') {
   if (kind === 'simple') {
     prompt.value = 'Translate to Thai: The meeting is at 3pm.'
-    modelId.value = 'gpt-4o'
+    modelId.value = 'gpt-oss-120b'
   } else {
     prompt.value =
       'Refactor this module into a clean architecture with step-by-step reasoning: explain trade-offs, write the class design, and propose tests for edge cases.'
-    modelId.value = 'llama-8b'
+    modelId.value = 'gpt-oss-20b'
   }
   reply.value = null
   showCompare.value = false
