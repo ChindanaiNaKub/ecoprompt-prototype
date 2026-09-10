@@ -9,7 +9,6 @@ import {
   percentSaved,
 } from './lib/estimate'
 import {
-  demoLeaderboard,
   initialGamification,
   onComparisonSeen,
   onRequestComplete,
@@ -22,7 +21,7 @@ import { isSupabaseConfigured, supabase } from './lib/supabase'
 const prompt = ref(
   'Translate this sentence to Thai: Software engineers should consider environmental impact.',
 )
-const modelId = ref<ModelId>('gpt-oss-120b')
+const modelId = ref<ModelId>('llama3-70b-8192')
 const game = ref<GamificationState>(initialGamification())
 const showCompare = ref(false)
 const lastRec = ref<Recommendation | null>(null)
@@ -42,7 +41,14 @@ let toastTimer: ReturnType<typeof setTimeout> | null = null
 let stopAuthListener: (() => void) | null = null
 
 const liveEstimate = computed(() => recommend(prompt.value, modelId.value))
-const leaderboard = computed(() => demoLeaderboard(game.value))
+const leaderboard = computed(() => [
+  {
+    display_name: 'You',
+    total_completed_quests: game.value.quests.filter((quest) => quest.progress >= quest.target).length,
+    max_streak: game.value.rightSizeStreak,
+    isYou: true,
+  },
+])
 const savingsPct = computed(() => {
   const rec = lastRec.value ?? liveEstimate.value
   return percentSaved(rec.currentEstimate.carbonG, rec.suggestedEstimate.carbonG)
@@ -138,6 +144,7 @@ async function finishRequest(switched: boolean, rec: Recommendation) {
     carbonSavedG: carbonSaved,
     tokensSaved,
     looksBatched: looksBatched(prompt.value),
+    contextCleared: false,
   })
 
   providerUsage.value = null
@@ -198,11 +205,11 @@ function mockReply(text: string, rec: Recommendation) {
 function useSample(kind: 'simple' | 'complex') {
   if (kind === 'simple') {
     prompt.value = 'Translate to Thai: The meeting is at 3pm.'
-    modelId.value = 'gpt-oss-120b'
+    modelId.value = 'llama3-70b-8192'
   } else {
     prompt.value =
       'Refactor this module into a clean architecture with step-by-step reasoning: explain trade-offs, write the class design, and propose tests for edge cases.'
-    modelId.value = 'gpt-oss-20b'
+    modelId.value = 'llama3-8b-8192'
   }
   reply.value = null
   providerUsage.value = null
@@ -396,7 +403,7 @@ async function signOut() {
         <section class="rail-block">
           <h2>Quests</h2>
           <p class="rail-note">
-            Light tracking for efficient habits. Leaderboard shows top savers only — no shame board.
+            Light tracking for efficient habits. Your local progress is shown here; opt-in leaderboard data comes from Supabase.
           </p>
           <ul class="quests">
             <li v-for="q in game.quests" :key="q.id">
@@ -421,20 +428,22 @@ async function signOut() {
         </section>
 
         <section class="rail-block">
-          <h2>Top efficient</h2>
+          <h2>Your efficiency</h2>
           <table class="board">
             <thead>
               <tr>
                 <th>#</th>
                 <th>Name</th>
-                <th>Saved</th>
+                <th>Quests</th>
+                <th>Streak</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(row, idx) in leaderboard" :key="row.name" :class="{ you: row.isYou }">
+              <tr v-for="(row, idx) in leaderboard" :key="row.display_name" :class="{ you: row.isYou }">
                 <td class="mono">{{ idx + 1 }}</td>
-                <td>{{ row.name }}</td>
-                <td class="mono">{{ row.carbonSavedG.toFixed(2) }} g</td>
+                <td>{{ row.display_name }}</td>
+                <td class="mono">{{ row.total_completed_quests }}</td>
+                <td class="mono">{{ row.max_streak }}</td>
               </tr>
             </tbody>
           </table>

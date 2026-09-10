@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { METHODOLOGY_VERSION, estimateRequest } from '../src/lib/estimate'
 
 test('estimates a transparent low to high carbon range', () => {
-  const estimate = estimateRequest('Translate this sentence to Thai.', 'gpt-oss-20b', 80)
+  const estimate = estimateRequest('Translate this sentence to Thai.', 'llama3-8b-8192', 80)
 
   expect(estimate.methodologyVersion).toBe(METHODOLOGY_VERSION)
   expect(estimate.totalTokens).toBe(estimate.inputTokens + estimate.outputTokens)
