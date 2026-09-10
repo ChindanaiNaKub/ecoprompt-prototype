@@ -4,6 +4,8 @@ import { estimateRequest, type Estimate } from './estimate'
 export type Complexity = 'simple' | 'moderate' | 'complex'
 
 export interface Recommendation {
+  detectedComplexity: Complexity
+  selectedComplexity: Complexity
   complexity: Complexity
   reasons: string[]
   suggested: ModelInfo
@@ -104,8 +106,17 @@ function pickSuggested(complexity: Complexity, currentId: ModelId): ModelInfo {
   return sameProvider ?? preferred[0]
 }
 
-export function recommend(prompt: string, modelId: ModelId): Recommendation {
-  const { complexity, reasons, expectedOutputTokens } = classifyComplexity(prompt)
+export function recommend(
+  prompt: string,
+  modelId: ModelId,
+  complexityOverride?: Complexity,
+): Recommendation {
+  const detected = classifyComplexity(prompt)
+  const complexity = complexityOverride ?? detected.complexity
+  const reasons = complexityOverride && complexityOverride !== detected.complexity
+    ? [...detected.reasons, `Manual override: treating this as ${complexity}`]
+    : detected.reasons
+  const expectedOutputTokens = complexity === 'simple' ? 80 : complexity === 'moderate' ? 256 : 512
   const current = getModel(modelId)
   const suggested = pickSuggested(complexity, modelId)
   const currentEstimate = estimateRequest(prompt, current.id, expectedOutputTokens)
@@ -134,6 +145,8 @@ export function recommend(prompt: string, modelId: ModelId): Recommendation {
   }
 
   return {
+    detectedComplexity: detected.complexity,
+    selectedComplexity: complexity,
     complexity,
     reasons,
     suggested,

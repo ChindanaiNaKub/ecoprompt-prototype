@@ -16,6 +16,7 @@ export interface LivePromptInput {
   recommendedModelId?: ModelId
   modelDecision?: 'keep' | 'switch' | 'override'
   studySessionId?: string
+  operationId?: string
   conversation: Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
@@ -33,6 +34,29 @@ export interface LivePromptResult {
   }
 }
 
+export function preparePromptPayload(input: LivePromptInput): LivePromptInput {
+  return {
+    ...input,
+    prompt: input.prompt.trim(),
+    storePrompt: Boolean(input.storePrompt),
+    contextCleared: Boolean(input.contextCleared),
+    operationId: input.operationId ?? crypto.randomUUID(),
+    conversation: input.conversation.map(({ role, content }) => ({
+      role,
+      content: content.trim(),
+    })).filter(({ content }) => content.length > 0),
+  }
+}
+
+export function orderLiveResults(
+  results: LivePromptResult[],
+  modelIds: ModelId[],
+): LivePromptResult[] {
+  return modelIds
+    .map((modelId) => results.find((result) => result.modelId === modelId))
+    .filter((result): result is LivePromptResult => Boolean(result))
+}
+
 export async function executeLivePrompt(input: LivePromptInput) {
   if (!supabase) throw new Error('Live mode is not configured.')
   
@@ -40,7 +64,7 @@ export async function executeLivePrompt(input: LivePromptInput) {
     results: LivePromptResult[]
     comparisonId: string | null
     methodologyVersion: string
-  }>('execute-prompt', { body: input })
+  }>('execute-prompt', { body: preparePromptPayload(input) })
 
   if (error) {
     let errorMessage = error.message
@@ -55,5 +79,10 @@ export async function executeLivePrompt(input: LivePromptInput) {
   }
 
   if (!data?.results?.length) throw new Error('The server returned no model response.')
-  return data
+  return {
+    ...data,
+    results: orderLiveResults(data.results, input.mode === 'dual'
+      ? [input.modelId, input.comparisonModelId!]
+      : [input.modelId]),
+  }
 }

@@ -6,6 +6,15 @@
 
 Create one GitHub issue per checkbox below. The person named first is the owner; the named support person reviews, pairs, or unblocks that issue. Run `bun run build` before asking for review.
 
+## Repository implementation status — 10 September
+
+These items are complete in the repository and pass local automated/browser checks. The delivery checkboxes below remain open where deployment, Supabase/Groq verification, research approval, study sessions, or release evidence are still required.
+
+- [x] Align the append-only Supabase release migration, Edge Function request/response contract, atomic gamification, idempotency, RLS-safe prompt deletion, and positive-only leaderboard RPC.
+- [x] Complete dashboard complexity overrides, opt-in prompt storage, signed-in hydration, private history/profile controls, dual comparison acknowledgement/results, and browser-only context controls.
+- [x] Add study capture validation for pre/post scores, task completion, model selection, recommendation acceptance, privacy clarity, and quota understanding.
+- [x] Add unit/static contract tests and corrected setup/request-contract documentation.
+
 ## Completed shared foundation — do not duplicate
 
 - [x] Groq three-tier catalog; transparent low/central/high modelled carbon range; provider-token vs modelled-carbon wording.

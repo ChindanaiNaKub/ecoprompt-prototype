@@ -22,8 +22,8 @@ export interface Badge {
 
 export interface LeaderboardEntry {
   display_name: string
-  total_completed_quests: number
-  max_streak: number
+  completed_requests: number
+  right_size_rate: number
   isYou?: boolean
 }
 
@@ -118,8 +118,16 @@ function bumpQuest(state: GamificationState, id: QuestId, by = 1) {
   }
 }
 
+function cloneGamification(state: GamificationState): GamificationState {
+  return {
+    ...state,
+    quests: state.quests.map((quest) => ({ ...quest })),
+    badges: state.badges.map((badge) => ({ ...badge })),
+  }
+}
+
 export function onComparisonSeen(state: GamificationState): GamificationState {
-  const next = structuredClone(state)
+  const next = cloneGamification(state)
   bumpQuest(next, 'compare-models')
   return next
 }
@@ -136,7 +144,7 @@ export function onRequestComplete(
     contextCleared: boolean
   },
 ): GamificationState {
-  const next = structuredClone(state)
+  const next = cloneGamification(state)
   next.requestsSent += 1
 
   if (opts.switched) {

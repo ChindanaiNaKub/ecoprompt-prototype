@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { MODELS, type ModelId } from './lib/models'
-import { recommend, type Recommendation } from './lib/recommend'
+import { recommend, type Complexity, type Recommendation } from './lib/recommend'
 import {
   formatCarbon,
   formatCarbonRange,
@@ -22,33 +22,65 @@ const prompt = ref(
   'Translate this sentence to Thai: Software engineers should consider environmental impact.',
 )
 const modelId = ref<ModelId>('llama3-70b-8192')
+const complexityOverride = ref<'auto' | Complexity>('auto')
+const storePrompt = ref(false)
+const conversation = ref<Array<{ role: 'user' | 'assistant'; content: string }>>([])
+const contextClearedForNext = ref(false)
 const game = ref<GamificationState>(initialGamification())
 const showCompare = ref(false)
 const lastRec = ref<Recommendation | null>(null)
 const reply = ref<string | null>(null)
 const providerUsage = ref<LivePromptResult | null>(null)
+const comparisonResults = ref<LivePromptResult[]>([])
+const comparisonId = ref<string | null>(null)
 const toast = ref<string | null>(null)
 const studySessionId = ref<string | null>(null)
 const studyConsent = ref(false)
 const preAnswers = ref<Partial<StudyAnswers>>({})
 const postAnswers = ref<Partial<StudyAnswers>>({})
+const privacyClarityRating = ref(5)
+const quotaUnderstanding = ref(false)
 const studyBusy = ref(false)
 const email = ref('')
 const signedInEmail = ref<string | null>(null)
+const profile = ref<{ display_name: string; leaderboard_opt_in: boolean; right_size_streak?: number } | null>(null)
+const profileDraft = ref('')
+const leaderboardRows = ref<Array<{ display_name: string; completed_requests: number; right_size_rate: number; isYou?: boolean }>>([])
+const history = ref<Array<{
+  id: string
+  created_at: string
+  model_id: ModelId
+  provider_model_id: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  modelled_carbon_low_g: number
+  modelled_carbon_central_g: number
+  modelled_carbon_high_g: number
+  model_decision: string
+  prompt_text: string | null
+  prompt_storage_consented: boolean
+}>>([])
+const dualAcknowledged = ref(false)
 const authBusy = ref(false)
 const sending = ref(false)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 let stopAuthListener: (() => void) | null = null
 
-const liveEstimate = computed(() => recommend(prompt.value, modelId.value))
-const leaderboard = computed(() => [
-  {
+const liveEstimate = computed(() => recommend(
+  prompt.value,
+  modelId.value,
+  complexityOverride.value === 'auto' ? undefined : complexityOverride.value,
+))
+const leaderboard = computed(() => {
+  if (isSupabaseConfigured && signedInEmail.value) return leaderboardRows.value
+  return [{
     display_name: 'You',
-    total_completed_quests: game.value.quests.filter((quest) => quest.progress >= quest.target).length,
-    max_streak: game.value.rightSizeStreak,
+    completed_requests: game.value.quests.filter((quest) => quest.progress >= quest.target).length,
+    right_size_rate: game.value.requestsSent ? Math.round((game.value.requestsSent - game.value.switchesAccepted) / game.value.requestsSent * 100) : 0,
     isYou: true,
-  },
-])
+  }]
+})
 const savingsPct = computed(() => {
   const rec = lastRec.value ?? liveEstimate.value
   return percentSaved(rec.currentEstimate.carbonG, rec.suggestedEstimate.carbonG)
@@ -58,7 +90,7 @@ const meterPct = computed(() =>
 )
 
 watch(showCompare, (open) => {
-  if (open) game.value = onComparisonSeen(game.value)
+  if (open && !signedInEmail.value) game.value = onComparisonSeen(game.value)
 })
 
 function showToast(message: string) {
@@ -79,9 +111,9 @@ window.addEventListener('keydown', onKeydown)
 onMounted(async () => {
   if (!supabase) return
   const { data } = await supabase.auth.getSession()
-  signedInEmail.value = data.session?.user.email ?? null
+  await applySession(data.session)
   const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-    signedInEmail.value = session?.user.email ?? null
+    void applySession(session)
   })
   stopAuthListener = () => listener.subscription.unsubscribe()
 })
@@ -97,6 +129,53 @@ function looksBatched(text: string) {
   return numbered || andQuestions
 }
 
+function resetAccountState() {
+  signedInEmail.value = null
+  profile.value = null
+  profileDraft.value = ''
+  history.value = []
+  leaderboardRows.value = []
+  game.value = initialGamification()
+  studySessionId.value = null
+}
+
+async function hydrateAccount() {
+  if (!supabase || !signedInEmail.value) return
+  const [profileResult, questResult, badgeResult, historyResult, leaderboardResult] = await Promise.all([
+    supabase.from('profiles').select('display_name, leaderboard_opt_in, right_size_streak').single(),
+    supabase.from('quest_progress').select('quest_id, progress, target, completed_at'),
+    supabase.from('badges').select('id, badge_id, earned_at').order('earned_at'),
+    supabase.from('request_events').select('id, created_at, model_id, provider_model_id, input_tokens, output_tokens, total_tokens, modelled_carbon_low_g, modelled_carbon_central_g, modelled_carbon_high_g, model_decision, prompt_text, prompt_storage_consented').order('created_at', { ascending: false }).limit(30),
+    supabase.rpc('get_efficiency_leaderboard'),
+  ])
+
+  if (profileResult.data) {
+    profile.value = profileResult.data
+    profileDraft.value = profileResult.data.display_name
+  }
+  const definitions = initialGamification().quests
+  const progressRows = (questResult.data ?? []) as Array<{ quest_id: string; progress: number; target: number; completed_at: string | null }>
+  game.value = {
+    ...initialGamification(),
+    quests: definitions.map((quest) => {
+      const row = progressRows.find((item) => item.quest_id === quest.id)
+      return row ? { ...quest, progress: row.progress, target: row.target } : quest
+    }),
+    badges: ((badgeResult.data ?? []) as Array<{ id: string; badge_id: string; earned_at: string }>).map((badge) => ({
+      id: badge.id, name: badge.badge_id, earnedAt: badge.earned_at,
+    })),
+    rightSizeStreak: profile.value?.right_size_streak ?? 0,
+  }
+  history.value = (historyResult.data ?? []) as typeof history.value
+  leaderboardRows.value = (leaderboardResult.data ?? []) as typeof leaderboardRows.value
+}
+
+async function applySession(session: { user?: { email?: string | null } } | null) {
+  signedInEmail.value = session?.user?.email ?? null
+  if (signedInEmail.value) await hydrateAccount()
+  else resetAccountState()
+}
+
 function openFlow() {
   if (!prompt.value.trim()) {
     showToast('Enter a prompt first.')
@@ -106,23 +185,26 @@ function openFlow() {
     showToast('Sign in with email before sending a live prompt.')
     return
   }
-  const rec = recommend(prompt.value, modelId.value)
-  lastRec.value = rec
+  const selectedRec = recommend(prompt.value, modelId.value, complexityOverride.value === 'auto' ? undefined : complexityOverride.value)
+  lastRec.value = selectedRec
   reply.value = null
-  if (rec.mismatch) {
+  comparisonResults.value = []
+  dualAcknowledged.value = false
+  if (selectedRec.mismatch) {
     showCompare.value = true
   } else {
-    void finishRequest(false, rec)
+    void finishRequest(false, selectedRec)
   }
 }
 
 async function finishRequest(switched: boolean, rec: Recommendation) {
   showCompare.value = false
+  dualAcknowledged.value = false
   if (switched) {
     modelId.value = rec.suggested.id
   }
   const finalModel = switched ? rec.suggested.id : rec.current.id
-  const finalRec = recommend(prompt.value, finalModel)
+  const finalRec = recommend(prompt.value, finalModel, complexityOverride.value === 'auto' ? undefined : complexityOverride.value)
   lastRec.value = finalRec
 
   const rightSized =
@@ -137,17 +219,8 @@ async function finishRequest(switched: boolean, rec: Recommendation) {
     ? Math.max(0, rec.currentEstimate.totalTokens - rec.suggestedEstimate.totalTokens)
     : 0
 
-  game.value = onRequestComplete(game.value, {
-    switched,
-    rightSized: Boolean(rightSized && (switched || !rec.mismatch)),
-    promptLength: prompt.value.trim().length,
-    carbonSavedG: carbonSaved,
-    tokensSaved,
-    looksBatched: looksBatched(prompt.value),
-    contextCleared: false,
-  })
-
   providerUsage.value = null
+  comparisonResults.value = []
   if (isSupabaseConfigured) {
     sending.value = true
     try {
@@ -155,19 +228,23 @@ async function finishRequest(switched: boolean, rec: Recommendation) {
         prompt: prompt.value,
         modelId: finalModel,
         mode: 'single',
-        detectedComplexity: rec.complexity,
-        selectedComplexity: finalRec.complexity,
+        detectedComplexity: rec.detectedComplexity,
+        selectedComplexity: finalRec.selectedComplexity,
         wasRecommended: finalModel === rec.suggested.id,
-        storePrompt: false,
-        contextCleared: false,
+        storePrompt: storePrompt.value,
+        contextCleared: contextClearedForNext.value,
         initialModelId: rec.current.id,
         recommendedModelId: rec.suggested.id,
-        modelDecision: switched ? 'switch' : 'keep',
+        modelDecision: switched ? 'switch' : complexityOverride.value === 'auto' ? 'keep' : 'override',
         studySessionId: studySessionId.value ?? undefined,
-        conversation: [],
+        conversation: conversation.value,
       })
       providerUsage.value = result.results[0]
       reply.value = providerUsage.value.output
+      comparisonId.value = result.comparisonId
+      conversation.value.push({ role: 'user', content: prompt.value.trim() }, { role: 'assistant', content: providerUsage.value.output })
+      contextClearedForNext.value = false
+      await hydrateAccount()
       showToast(`Provider reported ${formatTokens(providerUsage.value.totalTokens)} tokens.`)
     } catch (cause) {
       reply.value = null
@@ -178,8 +255,88 @@ async function finishRequest(switched: boolean, rec: Recommendation) {
     return
   }
 
+  game.value = onRequestComplete(game.value, {
+    switched,
+    rightSized: Boolean(rightSized && (switched || !rec.mismatch)),
+    promptLength: prompt.value.trim().length,
+    carbonSavedG: carbonSaved,
+    tokensSaved,
+    looksBatched: looksBatched(prompt.value),
+    contextCleared: contextClearedForNext.value,
+  })
   reply.value = mockReply(prompt.value, finalRec)
+  conversation.value.push({ role: 'user', content: prompt.value.trim() }, { role: 'assistant', content: reply.value })
+  contextClearedForNext.value = false
   showToast('Local demo response. Configure Supabase and sign in for provider-reported usage.')
+}
+
+async function compareBoth() {
+  if (!lastRec.value) return
+  if (!dualAcknowledged.value) {
+    showToast('Acknowledge the extra model run before comparing.')
+    return
+  }
+  const rec = lastRec.value
+  const primary = rec.current.id
+  const secondary = rec.suggested.id
+  showCompare.value = false
+  sending.value = true
+  providerUsage.value = null
+  try {
+    if (isSupabaseConfigured) {
+      const result = await executeLivePrompt({
+        prompt: prompt.value,
+        modelId: primary,
+        comparisonModelId: secondary,
+        mode: 'dual',
+        detectedComplexity: rec.detectedComplexity,
+        selectedComplexity: rec.selectedComplexity,
+        wasRecommended: primary === rec.suggested.id,
+        storePrompt: storePrompt.value,
+        contextCleared: contextClearedForNext.value,
+        initialModelId: primary,
+        recommendedModelId: secondary,
+        modelDecision: 'keep',
+        studySessionId: studySessionId.value ?? undefined,
+        conversation: conversation.value,
+      })
+      comparisonResults.value = result.results
+      comparisonId.value = result.comparisonId
+      providerUsage.value = result.results[0]
+      reply.value = result.results[0].output
+      conversation.value.push({ role: 'user', content: prompt.value.trim() }, { role: 'assistant', content: result.results[0].output })
+      contextClearedForNext.value = false
+      await hydrateAccount()
+    } else {
+      comparisonResults.value = [mockResult(primary, rec), mockResult(secondary, rec)]
+      providerUsage.value = comparisonResults.value[0]
+      reply.value = comparisonResults.value[0].output
+      game.value = onRequestComplete(game.value, {
+        switched: false, rightSized: false, promptLength: prompt.value.trim().length,
+        carbonSavedG: 0, tokensSaved: 0, looksBatched: looksBatched(prompt.value),
+        contextCleared: contextClearedForNext.value,
+      })
+      contextClearedForNext.value = false
+    }
+    showToast('Comparison complete. Both provider responses are shown below.')
+  } catch (cause) {
+    showToast(cause instanceof Error ? cause.message : 'The comparison failed.')
+  } finally {
+    sending.value = false
+  }
+}
+
+function mockResult(id: ModelId, rec: Recommendation): LivePromptResult {
+  const estimate = id === rec.current.id ? rec.currentEstimate : rec.suggestedEstimate
+  return {
+    modelId: id,
+    providerModelId: id,
+    output: mockReply(prompt.value, recommend(prompt.value, id, complexityOverride.value === 'auto' ? undefined : complexityOverride.value)),
+    inputTokens: estimate.inputTokens,
+    outputTokens: estimate.outputTokens,
+    totalTokens: estimate.totalTokens,
+    modelledCarbon: estimate.carbonRange,
+  }
 }
 
 function keepCurrent() {
@@ -213,7 +370,58 @@ function useSample(kind: 'simple' | 'complex') {
   }
   reply.value = null
   providerUsage.value = null
+  comparisonResults.value = []
+  dualAcknowledged.value = false
   showCompare.value = false
+}
+
+function removeTurn(index: number) {
+  conversation.value.splice(index, 1)
+}
+
+function clearContext() {
+  if (!conversation.value.length) return
+  conversation.value = []
+  contextClearedForNext.value = true
+  showToast('Conversation context cleared for the next request.')
+}
+
+async function saveProfile() {
+  if (!supabase || !profile.value || !profileDraft.value.trim()) return
+  const displayName = profileDraft.value.trim()
+  if (displayName.length < 2 || displayName.length > 32) {
+    showToast('Display name must be 2–32 characters.')
+    return
+  }
+  const { error } = await supabase.from('profiles').update({
+    display_name: displayName,
+    leaderboard_opt_in: profile.value.leaderboard_opt_in,
+  }).eq('id', (await supabase.auth.getUser()).data.user?.id)
+  if (error) showToast(error.message)
+  else { profile.value.display_name = displayName; showToast('Profile saved.') }
+}
+
+async function updateLeaderboardOptIn(value: boolean) {
+  if (!supabase || !profile.value) return
+  profile.value.leaderboard_opt_in = value
+  const { error } = await supabase.from('profiles').update({ leaderboard_opt_in: value }).eq('id', (await supabase.auth.getUser()).data.user?.id)
+  if (error) {
+    profile.value.leaderboard_opt_in = !value
+    showToast(error.message)
+  } else {
+    await hydrateAccount()
+  }
+}
+
+async function deleteSavedPrompt(eventId: string) {
+  if (!supabase) return
+  const { error } = await supabase.rpc('delete_saved_prompt', { p_event_id: eventId })
+  if (error) showToast(error.message)
+  else {
+    const item = history.value.find((entry) => entry.id === eventId)
+    if (item) { item.prompt_text = null; item.prompt_storage_consented = false }
+    showToast('Saved prompt text deleted. Metadata remains.')
+  }
 }
 
 async function startStudy() {
@@ -239,7 +447,7 @@ async function completeStudy() {
   }
   studyBusy.value = true
   try {
-    await finishStudy(studySessionId.value, scoreStudy(postAnswers.value))
+    await finishStudy(studySessionId.value, scoreStudy(postAnswers.value), privacyClarityRating.value, quotaUnderstanding.value)
     showToast('Thank you. Your pseudonymous study response is complete.')
     studySessionId.value = null
     postAnswers.value = {}
@@ -273,6 +481,7 @@ async function sendMagicLink() {
 async function signOut() {
   if (!supabase) return
   await supabase.auth.signOut()
+  resetAccountState()
   showToast('Signed out.')
 }
 </script>
@@ -350,22 +559,56 @@ async function signOut() {
 
         <label class="field">
           <span class="label">Text</span>
-          <textarea v-model="prompt" rows="8" spellcheck="false" />
+          <textarea id="prompt" v-model="prompt" name="prompt" rows="8" spellcheck="false" />
         </label>
 
         <label class="field">
           <span class="label">Model</span>
-          <select v-model="modelId">
+          <select id="model" v-model="modelId" name="model">
             <option v-for="m in MODELS" :key="m.id" :value="m.id">
               {{ m.name }} · {{ m.tier }} · {{ m.provider }}
             </option>
           </select>
         </label>
 
+        <label class="field">
+          <span class="label">Complexity selection</span>
+          <select id="complexity" v-model="complexityOverride" name="complexity">
+            <option value="auto">Auto-detect (recommended)</option>
+            <option value="simple">Simple</option>
+            <option value="moderate">Moderate</option>
+            <option value="complex">Complex</option>
+          </select>
+        </label>
+
+        <label class="checkline">
+          <input v-model="storePrompt" type="checkbox" />
+          Save this prompt to my private history (off by default)
+        </label>
+
+        <div class="context-tools">
+          <div>
+            <span class="label">Browser-only conversation context</span>
+            <span class="faint">{{ conversation.length }} retained turn{{ conversation.length === 1 ? '' : 's' }} · never stored</span>
+          </div>
+          <button type="button" class="btn ghost" :disabled="!conversation.length" @click="clearContext">Clear all context</button>
+        </div>
+
+        <ul v-if="conversation.length" class="context-list">
+          <li v-for="(turn, index) in conversation" :key="`${index}-${turn.role}`">
+            <span><strong>{{ turn.role }}</strong> · {{ turn.content.slice(0, 100) }}{{ turn.content.length > 100 ? '…' : '' }}</span>
+            <button type="button" class="btn ghost" @click="removeTurn(index)">Remove</button>
+          </li>
+        </ul>
+
         <dl class="readout">
           <div>
-            <dt>Complexity</dt>
-            <dd class="mono">{{ liveEstimate.complexity }}</dd>
+            <dt>Detected</dt>
+            <dd class="mono">{{ liveEstimate.detectedComplexity }}</dd>
+          </div>
+          <div>
+            <dt>Selected</dt>
+            <dd class="mono">{{ liveEstimate.selectedComplexity }}</dd>
           </div>
           <div>
             <dt>Suggested</dt>
@@ -387,15 +630,27 @@ async function signOut() {
           {{ sending ? 'Sending…' : 'Estimate & send' }}
         </button>
 
-        <article v-if="reply" class="reply">
-          <h3>Response</h3>
-          <p v-if="providerUsage" class="mono faint">
-            Provider-reported usage: {{ formatTokens(providerUsage.inputTokens) }} input +
-            {{ formatTokens(providerUsage.outputTokens) }} output =
-            {{ formatTokens(providerUsage.totalTokens) }} tokens<br />
-            Modelled carbon range: {{ formatCarbonRange(providerUsage.modelledCarbon) }}
-          </p>
-          <pre class="mono">{{ reply }}</pre>
+        <article v-if="reply || comparisonResults.length" class="reply">
+          <h3>{{ comparisonResults.length > 1 ? `Comparison${comparisonId ? ` · ${comparisonId.slice(0, 8)}` : ''}` : 'Response' }}</h3>
+          <div v-if="comparisonResults.length > 1" class="live-compare">
+            <div v-for="result in comparisonResults" :key="result.modelId" class="live-compare-col">
+              <strong>{{ result.providerModelId }}</strong>
+              <p class="mono faint">
+                {{ isSupabaseConfigured ? 'Provider-reported usage' : 'Demo usage estimate' }}: {{ formatTokens(result.inputTokens) }} input + {{ formatTokens(result.outputTokens) }} output = {{ formatTokens(result.totalTokens) }} total<br />
+                Modelled range: {{ formatCarbonRange(result.modelledCarbon) }}
+              </p>
+              <pre class="mono">{{ result.output }}</pre>
+            </div>
+          </div>
+          <template v-else>
+            <p v-if="providerUsage" class="mono faint">
+              Provider-reported usage: {{ formatTokens(providerUsage.inputTokens) }} input +
+              {{ formatTokens(providerUsage.outputTokens) }} output =
+              {{ formatTokens(providerUsage.totalTokens) }} tokens<br />
+              Modelled carbon range: {{ formatCarbonRange(providerUsage.modelledCarbon) }}
+            </p>
+            <pre class="mono">{{ reply }}</pre>
+          </template>
         </article>
       </section>
 
@@ -434,19 +689,47 @@ async function signOut() {
               <tr>
                 <th>#</th>
                 <th>Name</th>
-                <th>Quests</th>
-                <th>Streak</th>
+                <th>Requests</th>
+                <th>Right-size</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(row, idx) in leaderboard" :key="row.display_name" :class="{ you: row.isYou }">
                 <td class="mono">{{ idx + 1 }}</td>
                 <td>{{ row.display_name }}</td>
-                <td class="mono">{{ row.total_completed_quests }}</td>
-                <td class="mono">{{ row.max_streak }}</td>
+                <td class="mono">{{ row.completed_requests }}</td>
+                <td class="mono">{{ row.right_size_rate }}%</td>
               </tr>
             </tbody>
           </table>
+          <p class="rail-note">Only opted-in users with positive right-size results and at least 10 requests appear here.</p>
+        </section>
+
+        <section v-if="signedInEmail && profile" class="rail-block">
+          <h2>Privacy &amp; profile</h2>
+          <label class="field compact">
+            <span class="label">Display name</span>
+            <input id="display-name" v-model="profileDraft" name="display_name" maxlength="32" />
+          </label>
+          <label class="checkline">
+            <input :checked="profile.leaderboard_opt_in" type="checkbox" @change="updateLeaderboardOptIn(($event.target as HTMLInputElement).checked)" />
+            Show my display name on the positive leaderboard
+          </label>
+          <button type="button" class="btn ghost solid" @click="saveProfile">Save profile</button>
+        </section>
+
+        <section v-if="signedInEmail" class="rail-block">
+          <h2>Private request history</h2>
+          <p class="rail-note">Metadata is private to your account. Prompt text appears only for requests you explicitly saved.</p>
+          <p v-if="!history.length" class="empty">No requests yet.</p>
+          <ul v-else class="history">
+            <li v-for="event in history" :key="event.id">
+              <div class="history-head"><strong>{{ event.model_id }}</strong><span class="mono">{{ new Date(event.created_at).toLocaleString() }}</span></div>
+              <span class="mono faint">{{ formatTokens(event.total_tokens) }} tokens · {{ formatCarbonRange({ lowG: event.modelled_carbon_low_g, centralG: event.modelled_carbon_central_g, highG: event.modelled_carbon_high_g }) }}</span>
+              <span class="mono faint">Decision: {{ event.model_decision }}{{ event.prompt_storage_consented ? ' · prompt saved' : ' · prompt not saved' }}</span>
+              <button v-if="event.prompt_storage_consented" type="button" class="btn ghost" @click="deleteSavedPrompt(event.id)">Delete saved prompt</button>
+            </li>
+          </ul>
         </section>
 
         <section class="rail-block study">
@@ -490,6 +773,14 @@ async function signOut() {
               <label><input v-model="postAnswers.rightSizing" type="radio" value="b" /> Recommendations block larger models.</label>
               <label><input v-model="postAnswers.rightSizing" type="radio" value="c" /> A larger model can be appropriate for complex work.</label>
             </fieldset>
+            <label class="field compact">
+              <span class="label">Privacy behavior clarity (1–5)</span>
+              <input v-model.number="privacyClarityRating" type="number" min="1" max="5" />
+            </label>
+            <label class="checkline">
+              <input v-model="quotaUnderstanding" type="checkbox" />
+              I understand the daily quota and 429 message.
+            </label>
             <button type="button" class="btn ghost solid" :disabled="studyBusy" @click="completeStudy">
               Complete study
             </button>
@@ -518,7 +809,7 @@ async function signOut() {
           }}
         </h2>
         <p class="modal-copy">
-          Detected complexity: <strong>{{ lastRec.complexity }}</strong>. Keep your choice anytime —
+          Detected complexity: <strong>{{ lastRec.detectedComplexity }}</strong>; selected: <strong>{{ lastRec.selectedComplexity }}</strong>. Keep your choice anytime —
           nothing is blocked.
         </p>
 
@@ -551,6 +842,13 @@ async function signOut() {
           </button>
           <button type="button" class="btn ghost solid" @click="keepCurrent">
             Keep current model
+          </button>
+          <label class="checkline dual-check">
+            <input v-model="dualAcknowledged" type="checkbox" />
+            I understand this sends the prompt to both models.
+          </label>
+          <button type="button" class="btn ghost solid" :disabled="!dualAcknowledged || sending" @click="compareBoth">
+            Compare both
           </button>
         </div>
       </div>
@@ -802,6 +1100,66 @@ async function signOut() {
   margin-bottom: 0.85rem;
 }
 
+.field.compact {
+  margin-bottom: 0.6rem;
+}
+
+.field input[type='text'],
+.field input[type='number'] {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  padding: 0.55rem 0.65rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.checkline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0.65rem 0;
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.context-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 0.75rem;
+  margin: 0.8rem 0 0.45rem;
+}
+
+.context-tools > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.context-list,
+.history {
+  list-style: none;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.context-list li,
+.history li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+}
+
+.context-list li {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
 .label {
   font-family: var(--mono);
   font-size: 0.74rem;
@@ -836,7 +1194,7 @@ select:focus,
 
 .readout {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.65rem;
   margin: 0 0 0.75rem;
   padding: 0.7rem 0;
@@ -935,6 +1293,34 @@ select:focus,
   background: #e4e1d9;
   padding: 0.8rem;
   border: 1px solid var(--line);
+}
+
+.live-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.live-compare-col {
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  padding: 0.65rem;
+  background: var(--paper);
+}
+
+.live-compare-col pre {
+  margin-top: 0.6rem;
+}
+
+.history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.history .btn {
+  justify-self: start;
+  margin-top: 0.25rem;
 }
 
 .rail {
@@ -1186,13 +1572,19 @@ select:focus,
   .masthead,
   .workbench,
   .readout,
-  .compare {
+  .compare,
+  .live-compare {
     grid-template-columns: 1fr;
   }
 
   .compare-col + .compare-col {
     border-left: 0;
     border-top: 1px solid var(--line-strong);
+  }
+
+  .context-tools {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

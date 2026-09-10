@@ -15,8 +15,13 @@ export function scoreStudy(answers: Partial<StudyAnswers>) {
   )
 }
 
+export function isCompleteStudyScore(score: number): boolean {
+  return Number.isInteger(score) && score >= 0 && score <= 3
+}
+
 export async function beginStudy(preKnowledgeScore: number) {
   if (!supabase) throw new Error('Live study collection is not configured.')
+  if (!isCompleteStudyScore(preKnowledgeScore)) throw new Error('Study score is invalid.')
   
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
@@ -24,11 +29,7 @@ export async function beginStudy(preKnowledgeScore: number) {
 
   const { data, error } = await supabase
     .from('study_sessions')
-    .insert({ 
-      user_id: user.id,
-      pre_knowledge_score: preKnowledgeScore,
-      task_completed: false 
-    })
+    .insert({ user_id: user.id, pre_score: preKnowledgeScore })
     .select('id')
     .single()
     
@@ -43,16 +44,16 @@ export async function finishStudy(
   quotaUnderstanding?: boolean
 ) {
   if (!supabase) throw new Error('Live study collection is not configured.')
-  
-  const { error } = await supabase
-    .from('study_sessions')
-    .update({ 
-      post_knowledge_score: postKnowledgeScore,
-      privacy_clarity_rating: privacyClarityRating ?? 5,
-      quota_understanding: quotaUnderstanding ?? true,
-      task_completed: true 
-    })
-    .eq('id', sessionId)
-    
+  if (!isCompleteStudyScore(postKnowledgeScore)) throw new Error('Study score is invalid.')
+  const rating = privacyClarityRating ?? 5
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('Privacy rating is invalid.')
+  if (typeof quotaUnderstanding !== 'boolean') throw new Error('Quota answer is required.')
+
+  const { error } = await supabase.rpc('complete_study_session', {
+    p_session_id: sessionId,
+    p_post_score: postKnowledgeScore,
+    p_privacy_clarity: rating,
+    p_quota_understanding: quotaUnderstanding,
+  })
   if (error) throw new Error(error.message)
 }
