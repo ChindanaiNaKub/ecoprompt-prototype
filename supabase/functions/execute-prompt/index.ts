@@ -23,9 +23,11 @@ interface PromptRequest {
 }
 
 const MODELS: Record<ModelId, { providerModelId: string; energyRangePer1kTokens: readonly [number, number, number] }> = {
-  'llama3-8b-8192': { providerModelId: 'llama3-8b-8192', energyRangePer1kTokens: [0.2216, 0.277, 0.3324] },
-  'mixtral-8x7b-32768': { providerModelId: 'mixtral-8x7b-32768', energyRangePer1kTokens: [0.444, 0.555, 0.666] },
-  'llama3-70b-8192': { providerModelId: 'llama3-70b-8192', energyRangePer1kTokens: [0.6664, 0.833, 0.9996] },
+  'llama3-8b-8192': { providerModelId: 'openai/gpt-oss-20b', energyRangePer1kTokens: [0.2216, 0.277, 0.3324] },
+  
+  'mixtral-8x7b-32768': { providerModelId: 'openai/gpt-oss-20b', energyRangePer1kTokens: [0.444, 0.555, 0.666] },
+  
+  'llama3-70b-8192': { providerModelId: 'openai/gpt-oss-120b', energyRangePer1kTokens: [0.6664, 0.833, 0.9996] },
 }
 
 const GRID_INTENSITY_G_PER_WH = 0.475
@@ -40,7 +42,7 @@ function corsHeaders(origin: string | null) {
   const allowedOrigin = origin && allowedOrigins.has(origin) ? origin : 'https://chindanainakub.github.io'
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     Vary: 'Origin',
   }
@@ -150,9 +152,12 @@ Deno.serve(async (request) => {
         body: JSON.stringify({ model: model.providerModelId, messages, temperature: 0.2, max_completion_tokens: payload.mode === 'dual' ? 256 : 512 }),
       })
       
-      if (!groqResponse.ok) {
+if (!groqResponse.ok) {
+        const errorText = await groqResponse.text() 
+        console.error(`Groq API Error (${groqResponse.status}):`, errorText) // ปริ้นลง Log หลังบ้าน
+        
         if (groqResponse.status === 429) throw new Error('GROQ_RATE_LIMIT')
-        throw new Error('GROQ_REQUEST_FAILED')
+        throw new Error(`GROQ_FAILED: ${groqResponse.status} - ${errorText}`) 
       }
       
       const completion = await groqResponse.json()
@@ -229,16 +234,24 @@ Deno.serve(async (request) => {
       p_study_session_id: payload.studySessionId ?? null,
     })
 
-    if (writeError) return error('Response generated, but progress could not be saved.', 500, headers)
-    
+    if (writeError) {
+      console.error("Database Write Error:", writeError) // ปริ้นลง Log เผื่อเข้าไปดู
+      // โยนข้อความ Error ของจริงกลับไปที่หน้าบ้านเลย จะได้รู้ว่าพังที่คอลัมน์ไหน!
+      return error(`DB Error: ${writeError.message}`, 500, headers)
+    }
+
     return new Response(JSON.stringify({ results, comparisonId, methodologyVersion: METHODOLOGY_VERSION, gamification }), {
       headers: { ...headers, 'Content-Type': 'application/json' },
     })
     
-  } catch (cause) {
+} catch (cause) {
+    console.error('Edge Function Crash:', cause)
+
     if (cause instanceof Error && cause.message === 'GROQ_RATE_LIMIT') {
       return error('Groq’s free quota is temporarily unavailable. No alternative model was used.', 429, headers)
     }
-    return error('The model request failed. Please try again.', 502, headers)
+    
+    const errorMessage = cause instanceof Error ? cause.message : String(cause)
+    return error(`Debug Error: ${errorMessage}`, 502, headers)
   }
 })

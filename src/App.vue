@@ -42,6 +42,8 @@ const studySessionId = ref<string | null>(null)
 const studyConsent = ref(false)
 const preAnswers = ref<Partial<StudyAnswers>>({})
 const postAnswers = ref<Partial<StudyAnswers>>({})
+const showStudyReport = ref(false)
+const studyReportData = ref<{ preScore: number; postScore: number; improvement: number } | null>(null)
 const privacyClarityRating = ref(5)
 const quotaUnderstanding = ref(false)
 const studyBusy = ref(false)
@@ -147,32 +149,71 @@ function resetAccountState() {
 
 async function hydrateAccount() {
   if (!supabase || !signedInEmail.value) return
-  const [profileResult, questResult, badgeResult, historyResult, leaderboardResult] = await Promise.all([
-    supabase.from('profiles').select('display_name, leaderboard_opt_in, right_size_streak').single(),
-    supabase.from('quest_progress').select('quest_id, progress, target, completed_at'),
-    supabase.from('badges').select('id, badge_id, earned_at').order('earned_at'),
-    supabase.from('request_events').select('id, created_at, model_id, provider_model_id, input_tokens, output_tokens, total_tokens, modelled_carbon_low_g, modelled_carbon_central_g, modelled_carbon_high_g, model_decision, prompt_text, prompt_storage_consented').order('created_at', { ascending: false }).limit(30),
+
+  // 1. ลบ badgeResult ออกจาก Array เพื่อไม่ให้ตัวแปรรับค่าผิดช่อง
+  const [profileResult, questResult, historyResult, leaderboardResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('display_name,is_leaderboard_opt_in')
+      .single(),
+    supabase
+      .from('quest_progress')
+      .select('quest_type, streak_count, is_completed, updated_at'),
+    supabase
+      .from('request_events')
+      .select('id, created_at, model_used, prompt_length, provider_tokens, carbon_low, carbon_central, carbon_high, recommendation_shown, recommendation_accepted, initial_model_selected, prompt_text, has_consent')
+      .order('created_at', { ascending: false })
+      .limit(30),
     supabase.rpc('get_efficiency_leaderboard'),
   ])
 
   if (profileResult.data) {
-    profile.value = profileResult.data
-    profileDraft.value = profileResult.data.display_name
+    profile.value = {
+      display_name: profileResult.data.display_name || '',
+      leaderboard_opt_in: profileResult.data.is_leaderboard_opt_in,
+    }
+    profileDraft.value = profileResult.data.display_name || ''
   }
+
   const definitions = initialGamification().quests
-  const progressRows = (questResult.data ?? []) as Array<{ quest_id: string; progress: number; target: number; completed_at: string | null }>
+  
+  // 2. ปรับ Type ให้ตรงกับที่ดึงมาจาก Database ของจริง
+  const progressRows = (questResult.data ?? []) as Array<{ quest_type: string; streak_count: number; is_completed: boolean; updated_at: string | null }>
+  
   game.value = {
     ...initialGamification(),
     quests: definitions.map((quest) => {
-      const row = progressRows.find((item) => item.quest_id === quest.id)
-      return row ? { ...quest, progress: row.progress, target: row.target } : quest
+      // ค้นหาด้วย quest_type แทน quest_id
+      const row = progressRows.find((item) => item.quest_type === quest.id)
+      // แปลง is_completed หรือ streak_count ให้กลายเป็น progress
+      const currentProgress = row ? (row.is_completed ? quest.target : (row.streak_count || 0)) : 0
+      return row ? { ...quest, progress: currentProgress } : quest
     }),
-    badges: ((badgeResult.data ?? []) as Array<{ id: string; badge_id: string; earned_at: string }>).map((badge) => ({
-      id: badge.id, name: badge.badge_id, earnedAt: badge.earned_at,
-    })),
-    rightSizeStreak: profile.value?.right_size_streak ?? 0,
+    
+    // 3. ไม่ต้องดึง Badges จาก DB แล้ว ให้ระบบของหน้าบ้านคำนวณเอง
+    badges: [],
+
+    // 4. เปลี่ยนเป็น quest_type และดึงค่าจาก streak_count
+    rightSizeStreak: progressRows.find(q => q.quest_type === 'right-size-streak')?.streak_count ?? 0,
   }
-  history.value = (historyResult.data ?? []) as typeof history.value
+
+  // 5. แปลง (Map) ข้อมูล request_events ให้เป็นชื่อตัวแปรที่หน้าบ้านใช้แสดงผล
+  history.value = (historyResult.data ?? []).map((event: any) => ({
+    id: event.id,
+    created_at: event.created_at,
+    model_id: event.model_used,
+    provider_model_id: event.model_used,
+    input_tokens: Math.floor((event.provider_tokens || 0) / 2), 
+    output_tokens: Math.ceil((event.provider_tokens || 0) / 2),
+    total_tokens: event.provider_tokens || 0,
+    modelled_carbon_low_g: event.carbon_low || 0,
+    modelled_carbon_central_g: event.carbon_central || 0,
+    modelled_carbon_high_g: event.carbon_high || 0,
+    model_decision: event.initial_model_selected === event.model_used ? 'keep' : 'switch',
+    prompt_text: event.prompt_text,
+    prompt_storage_consented: event.has_consent || false
+  })) as typeof history.value
+
   leaderboardRows.value = (leaderboardResult.data ?? []) as typeof leaderboardRows.value
 }
 
@@ -393,7 +434,7 @@ function clearContext() {
 }
 
 async function saveProfile() {
-  if (!supabase || !profile.value || !profileDraft.value.trim()) return
+if (!supabase || !profile.value || !profileDraft.value || !profileDraft.value.trim()) return
   const displayName = profileDraft.value.trim()
   if (displayName.length < 2 || displayName.length > 32) {
     showToast('Display name must be 2–32 characters.')
@@ -401,16 +442,24 @@ async function saveProfile() {
   }
   const { error } = await supabase.from('profiles').update({
     display_name: displayName,
-    leaderboard_opt_in: profile.value.leaderboard_opt_in,
+    is_leaderboard_opt_in: profile.value.leaderboard_opt_in,
   }).eq('id', (await supabase.auth.getUser()).data.user?.id)
-  if (error) showToast(error.message)
-  else { profile.value.display_name = displayName; showToast('Profile saved.') }
+
+  if (error) {
+    showToast(error.message)
+  } else {
+    profile.value.display_name = displayName
+    showToast('Profile saved.')
+  }
 }
 
 async function updateLeaderboardOptIn(value: boolean) {
   if (!supabase || !profile.value) return
   profile.value.leaderboard_opt_in = value
-  const { error } = await supabase.from('profiles').update({ leaderboard_opt_in: value }).eq('id', (await supabase.auth.getUser()).data.user?.id)
+  const { error } = await supabase.from('profiles').update({
+    is_leaderboard_opt_in: value,
+  }).eq('id', (await supabase.auth.getUser()).data.user?.id)
+
   if (error) {
     profile.value.leaderboard_opt_in = !value
     showToast(error.message)
@@ -422,8 +471,9 @@ async function updateLeaderboardOptIn(value: boolean) {
 async function deleteSavedPrompt(eventId: string) {
   if (!supabase) return
   const { error } = await supabase.rpc('delete_saved_prompt', { p_event_id: eventId })
-  if (error) showToast(error.message)
-  else {
+  if (error) {
+    showToast(error.message)
+  } else {
     const item = history.value.find((entry) => entry.id === eventId)
     if (item) { item.prompt_text = null; item.prompt_storage_consented = false }
     showToast('Saved prompt text deleted. Metadata remains.')
@@ -453,15 +503,33 @@ async function completeStudy() {
   }
   studyBusy.value = true
   try {
-    await finishStudy(studySessionId.value, scoreStudy(postAnswers.value), privacyClarityRating.value, quotaUnderstanding.value)
-    showToast('Thank you. Your pseudonymous study response is complete.')
-    studySessionId.value = null
-    postAnswers.value = {}
+    const preScore = scoreStudy(preAnswers.value)
+    const postScore = scoreStudy(postAnswers.value)
+
+    await finishStudy(studySessionId.value, postScore, privacyClarityRating.value, quotaUnderstanding.value)
+    
+    studyReportData.value = {
+      preScore,
+      postScore,
+      improvement: postScore - preScore
+    }
+    showStudyReport.value = true 
+    
   } catch (cause) {
     showToast(cause instanceof Error ? cause.message : 'Could not save the follow-up study.')
   } finally {
     studyBusy.value = false
   }
+}
+
+function closeStudyReport() {
+  showStudyReport.value = false
+  studySessionId.value = null
+  postAnswers.value = {}
+  preAnswers.value = {}
+  studyConsent.value = false
+  studyReportData.value = null
+  showToast('Study session completed and reset.')
 }
 
 async function sendMagicLink() {
@@ -744,6 +812,50 @@ async function signOut() {
             <p v-else class="delta hot">Weak model + retries can cost more</p>
           </div>
         </div>
+
+        <!-- Popup สำหรับโชว์ Report สรุปผล -->
+    <div
+      v-if="showStudyReport && studyReportData"
+      class="modal-root"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="modal-backdrop" @click="closeStudyReport" />
+      <div class="modal">
+        <p class="kicker">Study Complete</p>
+        <h2>Your Learning Summary</h2>
+        <p class="modal-copy">
+          Thank you for participating! Here is how your understanding of carbon-aware prompting changed:
+        </p>
+
+        <div class="compare">
+          <div class="compare-col">
+            <p class="compare-label">Pre-test Score</p>
+            <p class="compare-name">{{ studyReportData.preScore }} / 3</p>
+          </div>
+          <div class="compare-col suggest">
+            <p class="compare-label">Post-test Score</p>
+            <p class="compare-name">{{ studyReportData.postScore }} / 3</p>
+            <p v-if="studyReportData.improvement > 0" class="delta">
+              Improved by {{ studyReportData.improvement }} point(s)!
+            </p>
+            <p v-else-if="studyReportData.improvement === 0 && studyReportData.postScore === 3" class="delta">
+              Perfect score maintained!
+            </p>
+          </div>
+        </div>
+
+        <p class="modal-copy" style="margin-top: 1rem;">
+          <strong>Current Right-size Streak:</strong> {{ game.rightSizeStreak }} / 5
+        </p>
+
+        <div class="modal-actions">
+          <button type="button" class="btn primary" @click="closeStudyReport">
+            Close & Reset Session
+          </button>
+        </div>
+      </div>
+    </div>
 
         <div class="modal-actions">
           <button type="button" class="btn primary" @click="switchAndContinue">

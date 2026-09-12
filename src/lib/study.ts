@@ -27,11 +27,11 @@ export async function beginStudy(preKnowledgeScore: number) {
   
   if (authError || !user) throw new Error('You must be signed in to participate in the study.')
 
-  const { data, error } = await supabase
-    .from('study_sessions')
-    .insert({ user_id: user.id, pre_score: preKnowledgeScore })
-    .select('id')
-    .single()
+const { data, error } = await supabase
+  .from('study_sessions')
+  .insert({ user_id: user.id, pre_knowledge_score: preKnowledgeScore }) 
+  .select('id')
+  .single()
     
   if (error) throw new Error(error.message)
   return data.id as string
