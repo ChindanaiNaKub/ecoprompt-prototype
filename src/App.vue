@@ -22,6 +22,9 @@ import LeaderboardTab from './components/LeaderboardTab.vue'
 import StudyTab from './components/StudyTab.vue'
 import SettingsTab from './components/SettingsTab.vue'
 
+const showStudyReport = ref(false)
+const studyReportData = ref<{ preScore: number; postScore: number; improvement: number } | null>(null)
+const privacyClarityRating = ref(5)
 const prompt = ref(
   'Translate this sentence to Thai: Software engineers should consider environmental impact.',
 )
@@ -42,9 +45,6 @@ const studySessionId = ref<string | null>(null)
 const studyConsent = ref(false)
 const preAnswers = ref<Partial<StudyAnswers>>({})
 const postAnswers = ref<Partial<StudyAnswers>>({})
-const showStudyReport = ref(false)
-const studyReportData = ref<{ preScore: number; postScore: number; improvement: number } | null>(null)
-const privacyClarityRating = ref(5)
 const quotaUnderstanding = ref(false)
 const studyBusy = ref(false)
 const email = ref('')
@@ -505,7 +505,6 @@ async function completeStudy() {
   try {
     const preScore = scoreStudy(preAnswers.value)
     const postScore = scoreStudy(postAnswers.value)
-
     await finishStudy(studySessionId.value, postScore, privacyClarityRating.value, quotaUnderstanding.value)
     
     studyReportData.value = {
@@ -812,8 +811,37 @@ async function signOut() {
             <p v-else class="delta hot">Weak model + retries can cost more</p>
           </div>
         </div>
+        <div class="modal-actions">
+          <button type="button" class="btn primary" @click="switchAndContinue">
+            Switch &amp; continue
+          </button>
+          <button type="button" class="btn ghost solid" @click="keepCurrent">
+            Keep current model
+          </button>
+          <label class="checkline dual-check">
+            <input v-model="dualAcknowledged" type="checkbox" />
+            I understand this sends the prompt to both models.
+          </label>
+          <button type="button" class="btn ghost solid" :disabled="!dualAcknowledged || sending" @click="compareBoth">
+            Compare both
+          </button>
+        </div>
+      </div>
+    </div>
+    <div
+      v-if="showCompare && lastRec"
+      class="modal-root"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="compare-title"
+    >
+      <div class="modal-backdrop" @click="keepCurrent" />
+      <div class="modal">
+        <!-- ... โค้ดข้างใน ... -->
+      </div>
+    </div>
 
-        <!-- Popup สำหรับโชว์ Report สรุปผล -->
+    <!-- 🌟 2. วาง Popup สรุปผล ต่อท้ายตรงนี้เลย! (ต้องอยู่นอกสุด) 🌟 -->
     <div
       v-if="showStudyReport && studyReportData"
       class="modal-root"
@@ -852,24 +880,6 @@ async function signOut() {
         <div class="modal-actions">
           <button type="button" class="btn primary" @click="closeStudyReport">
             Close & Reset Session
-          </button>
-        </div>
-      </div>
-    </div>
-
-        <div class="modal-actions">
-          <button type="button" class="btn primary" @click="switchAndContinue">
-            Switch &amp; continue
-          </button>
-          <button type="button" class="btn ghost solid" @click="keepCurrent">
-            Keep current model
-          </button>
-          <label class="checkline dual-check">
-            <input v-model="dualAcknowledged" type="checkbox" />
-            I understand this sends the prompt to both models.
-          </label>
-          <button type="button" class="btn ghost solid" :disabled="!dualAcknowledged || sending" @click="compareBoth">
-            Compare both
           </button>
         </div>
       </div>
