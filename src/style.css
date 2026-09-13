@@ -85,12 +85,11 @@ a{
   color:#fffdf8;
   letter-spacing:.06em
 }
-.auth{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:center;
-  gap:.5rem;
-  margin-left:auto
+.auth {
+  display: flex;
+  align-items: center;
+  gap: .5rem;      
+  margin-left: auto;
 }
 .auth input{
   min-width:11rem
@@ -111,7 +110,7 @@ a{
   display:grid;
   grid-template-columns:minmax(0,1.32fr) minmax(280px,.68fr);
   gap:2rem;
-  align-items:end;
+  align-items:center;
   margin-bottom:2.25rem
 }
 .kicker{

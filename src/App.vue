@@ -566,7 +566,7 @@ async function signOut() {
       <form v-if="isSupabaseConfigured && !signedInEmail" class="auth" @submit.prevent="sendMagicLink">
         <label class="sr-only" for="email">Email</label>
         <input id="email" v-model="email" type="email" autocomplete="email" placeholder="you@example.com" required />
-        <button type="submit" class="btn ghost solid" :disabled="authBusy">Email sign-in</button>
+        <button type="submit" class="btn ghost solid" :disabled="authBusy">Email Sign-in</button>
       </form>
       <div v-else-if="signedInEmail" class="auth">
         <span>Signed in: {{ signedInEmail }}</span>
@@ -828,20 +828,6 @@ async function signOut() {
         </div>
       </div>
     </div>
-    <div
-      v-if="showCompare && lastRec"
-      class="modal-root"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="compare-title"
-    >
-      <div class="modal-backdrop" @click="keepCurrent" />
-      <div class="modal">
-        <!-- ... โค้ดข้างใน ... -->
-      </div>
-    </div>
-
-    <!-- 🌟 2. วาง Popup สรุปผล ต่อท้ายตรงนี้เลย! (ต้องอยู่นอกสุด) 🌟 -->
     <div
       v-if="showStudyReport && studyReportData"
       class="modal-root"
