@@ -31,10 +31,10 @@ jobs:
             --max-time 30 --retry 3 --retry-all-errors \
             -H "apikey: $KEY" \
             -H "Authorization: Bearer $KEY" \
-            "$SUPABASE_URL/rest/v1/badges?select=id&limit=1")
+            "$SUPABASE_URL/auth/v1/health")
           echo "HTTP $code"
           cat /tmp/body
           case "$code" in
-            000|5*) echo "::error::Supabase project did not respond (HTTP $code)"; exit 1 ;;
-            *) echo "Supabase project is awake (HTTP $code)." ;;
+            2*) echo "Supabase project is awake (HTTP $code)." ;;
+            *) echo "::error::Supabase health check returned HTTP $code"; exit 1 ;;
           esac
