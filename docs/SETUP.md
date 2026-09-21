@@ -6,6 +6,9 @@
 3. Add `GROQ_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` as Edge Function secrets. Never add either to a Vite environment file.
 4. In Groq Data Controls, enable Zero Data Retention. Do not enable batch or fine-tuning features for this project.
 5. Deploy `execute-prompt`, then set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the GitHub Pages build environment.
+6. Keep the free-tier project awake: `.github/workflows/supabase-keepalive.yml` pings Supabase every 6 days
+   using those same repository variables. GitHub disables scheduled workflows after ~60 days without repo
+   activity, so re-enable it (or run it manually) if the schedule ever stops.
 
 ## Privacy and request behavior
 
