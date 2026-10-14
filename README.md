@@ -204,6 +204,11 @@ The local app can demonstrate the estimator and mock response without public var
 requests require `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, a deployed `execute-prompt`
 function, magic-link authentication, and server-side `GROQ_API_KEY` plus
 `SUPABASE_SERVICE_ROLE_KEY`. Never place provider or service-role keys in Vite environment files.
+Supabase Auth redirect URLs must include:
+
+- `https://chindanainakub.github.io/ecoprompt-prototype/` (production callback)
+- `http://localhost:5173/` (localhost callback; keep trailing slash)
+- Your exact local subpath callback too if you run Vite under a subpath (for example `http://localhost:5173/ecoprompt-prototype/`)
 
 Follow [deployment setup](docs/SETUP.md). Apply migrations in order:
 

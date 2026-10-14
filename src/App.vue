@@ -17,6 +17,7 @@ import {
 import { beginStudy, finishStudy, scoreStudy, type StudyAnswers } from './lib/study'
 import { executeLivePrompt, type LivePromptResult } from './lib/live'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { getAuthCallbackUrl } from './lib/auth-callback'
 import QuestTab from './components/QuestTab.vue'
 import LeaderboardTab from './components/LeaderboardTab.vue'
 import StudyTab from './components/StudyTab.vue'
@@ -540,7 +541,7 @@ async function sendMagicLink() {
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.value.trim(),
-      options: { emailRedirectTo: window.location.href },
+      options: { emailRedirectTo: getAuthCallbackUrl() },
     })
     if (error) throw error
     showToast('Check your email for the sign-in link.')

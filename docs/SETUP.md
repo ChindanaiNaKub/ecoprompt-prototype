@@ -2,7 +2,11 @@
 
 1. Create a Supabase project, then run migrations in filename order: `202609090001_ecoprompt.sql`,
    `202609090002_methodology_and_study.sql`, and `202609100003_release_completion.sql`.
-2. Enable Email magic-link authentication. Add `http://localhost:5173` and the GitHub Pages URL to Supabase Auth redirect URLs.
+2. Enable Email magic-link authentication and configure redirect URLs exactly:
+   - Production callback URL: `https://chindanainakub.github.io/ecoprompt-prototype/`
+   - Local callback URL: `http://localhost:5173/` (or your Vite localhost origin, with trailing slash)
+   - If you run local dev under a subpath, also add that exact subpath callback (for example `http://localhost:5173/ecoprompt-prototype/`)
+   - Keep the trailing slash for callback URLs to match the frontend callback helper behavior.
 3. Add `GROQ_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` as Edge Function secrets. Never add either to a Vite environment file.
 4. In Groq Data Controls, enable Zero Data Retention. Do not enable batch or fine-tuning features for this project.
 5. Deploy `execute-prompt`, then set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the GitHub Pages build environment.
